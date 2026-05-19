@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   import type {
     ActivationShortcut,
@@ -16,6 +16,7 @@
   import {
     addExtensionSettingListEntry,
     activationShortcutFromKeyboardEvent,
+    applyAppearanceTheme,
     applyCatalogRefreshResult,
     applyExtensionMutationResult,
     applyExtensionSettingsSaveResult,
@@ -34,6 +35,7 @@
     runtimeSettingsSaveRequestFromDraft,
     updateExtensionSettingListEntry,
     updateExtensionSettingToggle,
+    watchSystemAppearanceTheme,
   } from "./commands";
 
   type SettingsPage = "general" | "extensions" | "marketplace";
@@ -68,6 +70,7 @@
   let extensionSettingsPanel: ExtensionSettingsPanel | null = null;
   let settingsMessage: string | null = null;
   let settingsFailed = false;
+  let stopSystemAppearanceWatcher: (() => void) | null = null;
 
   $: settingsDirty = runtimeSettingsAreDirty(settingsSaved, settingsDraft);
   $: visibleCatalogEntries = filterCatalogEntries(catalogEntries, catalogQuery);
@@ -83,6 +86,18 @@
     loadExtensionsBootstrap();
   });
 
+  onDestroy(() => {
+    stopSystemAppearanceWatcher?.();
+  });
+
+  function applySettingsAppearanceTheme(theme: RuntimeSettings["appearance_theme"]) {
+    applyAppearanceTheme(theme);
+    stopSystemAppearanceWatcher?.();
+    stopSystemAppearanceWatcher = watchSystemAppearanceTheme(theme, () => {
+      applyAppearanceTheme(theme);
+    });
+  }
+
   function loadSettingsBootstrap() {
     settingsLoading = true;
     paletteApi
@@ -95,6 +110,7 @@
         settingsConfigError = bootstrap.config_error;
         settingsMessage = null;
         settingsFailed = false;
+        applySettingsAppearanceTheme(bootstrap.config.appearance_theme);
       })
       .catch((error: unknown) => {
         settingsMessage = errorMessage(error);
@@ -141,6 +157,7 @@
     updateSettingsDraft((draft) => {
       draft.appearance_theme = value;
     });
+    applySettingsAppearanceTheme(value);
   }
 
   function updateCatalogEnabled(value: boolean) {
@@ -228,6 +245,7 @@
         settingsDraft = applied.draft;
         settingsMessage = applied.message;
         settingsFailed = applied.failed;
+        applySettingsAppearanceTheme(applied.draft.appearance_theme);
 
         if (!applied.failed) {
           await reloadRuntimeStateAfterSave();
@@ -262,6 +280,7 @@
     }
 
     settingsDraft = discardRuntimeSettingsDraft(settingsSaved);
+    applySettingsAppearanceTheme(settingsDraft.appearance_theme);
     settingsMessage = "Changes discarded";
     settingsFailed = false;
   }
@@ -667,18 +686,18 @@
 
 <svelte:window onkeydown={handleActivationShortcutKeydown} />
 
-<main class="min-h-screen bg-zinc-950 text-zinc-100">
+<main class="min-h-screen bg-[var(--settings-bg)] text-[var(--settings-text-primary)]">
   <section class="flex min-h-screen">
-    <aside class="w-56 border-r border-zinc-800 bg-zinc-900 p-4">
+    <aside class="w-56 border-r border-[var(--settings-border-soft)] bg-[var(--settings-sidebar-bg)] p-4">
       <h1 class="text-lg font-semibold">Omni Palette</h1>
-      <p class="text-sm text-zinc-400">Preferences</p>
+      <p class="text-sm text-[var(--settings-text-muted)]">Preferences</p>
       <nav class="mt-6 grid gap-2">
         <button
           class={[
             "rounded border px-3 py-2 text-left text-sm",
             activeSettingsPage === "general"
-              ? "border-amber-500 bg-zinc-800 text-zinc-100"
-              : "border-transparent text-zinc-300",
+              ? "border-[var(--settings-accent)] bg-[var(--settings-surface-alt)] text-[var(--settings-text-primary)]"
+              : "border-transparent text-[var(--settings-text-secondary)]",
           ].join(" ")}
           onclick={() => (activeSettingsPage = "general")}
           type="button"
@@ -690,8 +709,8 @@
           class={[
             "rounded border px-3 py-2 text-left text-sm",
             activeSettingsPage === "extensions"
-              ? "border-amber-500 bg-zinc-800 text-zinc-100"
-              : "border-transparent text-zinc-300",
+              ? "border-[var(--settings-accent)] bg-[var(--settings-surface-alt)] text-[var(--settings-text-primary)]"
+              : "border-transparent text-[var(--settings-text-secondary)]",
           ].join(" ")}
           onclick={() => (activeSettingsPage = "extensions")}
           type="button"
@@ -703,8 +722,8 @@
           class={[
             "rounded border px-3 py-2 text-left text-sm",
             activeSettingsPage === "marketplace"
-              ? "border-amber-500 bg-zinc-800 text-zinc-100"
-              : "border-transparent text-zinc-300",
+              ? "border-[var(--settings-accent)] bg-[var(--settings-surface-alt)] text-[var(--settings-text-primary)]"
+              : "border-transparent text-[var(--settings-text-secondary)]",
           ].join(" ")}
           onclick={() => (activeSettingsPage = "marketplace")}
           type="button"
@@ -720,23 +739,23 @@
         <div>
           {#if activeSettingsPage === "general"}
             <h2 class="text-2xl font-semibold">General</h2>
-            <p class="mt-1 text-sm text-zinc-400">
+            <p class="mt-1 text-sm text-[var(--settings-text-muted)]">
               Control how Omni Palette opens and where preferences are stored.
             </p>
           {:else if activeSettingsPage === "extensions"}
             <h2 class="text-2xl font-semibold">Installed Extensions</h2>
-            <p class="mt-1 text-sm text-zinc-400">
+            <p class="mt-1 text-sm text-[var(--settings-text-muted)]">
               Manage extensions that are available on this device.
             </p>
           {:else}
             <h2 class="text-2xl font-semibold">Extension Marketplace</h2>
-            <p class="mt-1 text-sm text-zinc-400">
+            <p class="mt-1 text-sm text-[var(--settings-text-muted)]">
               Configure the catalog source for future extension installs.
             </p>
           {/if}
         </div>
         <button
-          class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+          class="settings-button disabled:text-[var(--settings-text-muted)]"
           disabled={settingsReloading}
           onclick={reloadRuntimeState}
           type="button"
@@ -761,7 +780,7 @@
             "mb-4 rounded border px-3 py-2 text-sm",
             settingsFailed
               ? "border-red-800 bg-red-950 text-red-200"
-              : "border-emerald-800 bg-emerald-950 text-emerald-200",
+              : "border-[var(--settings-success-border)] bg-[var(--settings-success-bg)] text-[var(--settings-success-text)]",
           ].join(" ")}
         >
           {settingsMessage}
@@ -769,123 +788,163 @@
       {/if}
 
       {#if settingsLoading || !settingsDraft}
-        <div class="rounded border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
+        <div class="rounded border border-[var(--settings-border-soft)] bg-[var(--settings-surface)] p-6 text-sm text-[var(--settings-text-muted)]">
           Loading settings...
         </div>
       {:else}
         {#if activeSettingsPage === "general"}
           <div class="space-y-6">
-            <fieldset class="rounded border border-zinc-800 bg-zinc-900 p-4">
-              <legend class="px-1 text-sm font-medium text-zinc-200">Appearance</legend>
-              <div class="mt-3 flex flex-wrap gap-2">
-                {#each ["system", "light", "dark"] as theme}
+            <section class="settings-section">
+              <h3 class="settings-section-title">Appearance</h3>
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row-label">Theme</p>
+                  <p class="settings-row-description">
+                    Follow Windows or use a fixed light or dark theme.
+                  </p>
+                </div>
+                <div class="settings-row-control">
+                  {#each ["system", "light", "dark"] as theme}
+                    <label
+                      class={[
+                        "settings-segmented-option capitalize",
+                        settingsDraft.appearance_theme === theme
+                          ? "settings-segmented-option-selected"
+                          : "",
+                      ].join(" ")}
+                    >
+                      <input
+                        checked={settingsDraft.appearance_theme === theme}
+                        class="sr-only"
+                        name="appearance-theme"
+                        onchange={() =>
+                          updateAppearanceTheme(theme as RuntimeSettings["appearance_theme"])}
+                        type="radio"
+                      />
+                      {theme}
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <h3 class="settings-section-title">Activation</h3>
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row-label">Activation shortcut</p>
+                  <p class="settings-row-description">
+                    The global shortcut that opens Omni Palette.
+                  </p>
+                </div>
+                <div class="settings-row-control">
+                  <span class="settings-chip">
+                    {formatActivationShortcut(settingsDraft.activation_shortcut)}
+                  </span>
+                  <button
+                    class="settings-button"
+                    disabled={recordingActivationShortcut}
+                    onclick={recordActivationShortcut}
+                    type="button"
+                  >
+                    {recordingActivationShortcut ? "Recording..." : "Record"}
+                  </button>
+                  <button
+                    class="settings-button"
+                    disabled={!defaultActivationShortcut}
+                    onclick={resetActivationShortcut}
+                    type="button"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <h3 class="settings-section-title">Command behavior</h3>
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row-label">Mode</p>
+                  <p class="settings-row-description">
+                    Execute commands immediately or show their guide first.
+                  </p>
+                </div>
+                <div class="settings-row-control">
                   <label
                     class={[
-                      "rounded border px-3 py-2 text-sm capitalize",
-                      settingsDraft.appearance_theme === theme
-                        ? "border-amber-500 bg-zinc-800 text-zinc-100"
-                        : "border-zinc-700 text-zinc-300",
+                      "settings-segmented-option",
+                      settingsDraft.command_behavior === "execute"
+                        ? "settings-segmented-option-selected"
+                        : "",
                     ].join(" ")}
                   >
                     <input
-                      checked={settingsDraft.appearance_theme === theme}
+                      checked={settingsDraft.command_behavior === "execute"}
                       class="sr-only"
-                      name="appearance-theme"
-                      onchange={() =>
-                        updateAppearanceTheme(theme as RuntimeSettings["appearance_theme"])}
+                      name="command-behavior"
+                      onchange={() => updateCommandBehavior("execute")}
                       type="radio"
                     />
-                    {theme}
+                    Execute
                   </label>
-                {/each}
-              </div>
-            </fieldset>
-
-            <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
-              <h3 class="text-sm font-medium text-zinc-200">Activation shortcut</h3>
-              <div class="mt-3 flex flex-wrap items-center gap-2">
-                <span
-                  class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-300"
-                >
-                  {formatActivationShortcut(settingsDraft.activation_shortcut)}
-                </span>
-                <button
-                  class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
-                  disabled={recordingActivationShortcut}
-                  onclick={recordActivationShortcut}
-                  type="button"
-                >
-                  {recordingActivationShortcut ? "Recording..." : "Record"}
-                </button>
-                <button
-                  class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
-                  disabled={!defaultActivationShortcut}
-                  onclick={resetActivationShortcut}
-                  type="button"
-                >
-                  Reset
-                </button>
+                  <label
+                    class={[
+                      "settings-segmented-option",
+                      settingsDraft.command_behavior === "guide"
+                        ? "settings-segmented-option-selected"
+                        : "",
+                    ].join(" ")}
+                  >
+                    <input
+                      checked={settingsDraft.command_behavior === "guide"}
+                      class="sr-only"
+                      name="command-behavior"
+                      onchange={() => updateCommandBehavior("guide")}
+                      type="radio"
+                    />
+                    Guide
+                  </label>
+                </div>
               </div>
             </section>
 
-            <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
-              <h3 class="text-sm font-medium text-zinc-200">Command behavior</h3>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <label
-                  class={[
-                    "rounded border px-3 py-2 text-sm",
-                    settingsDraft.command_behavior === "execute"
-                      ? "border-amber-500 bg-zinc-800 text-zinc-100"
-                      : "border-zinc-700 text-zinc-300",
-                  ].join(" ")}
-                >
-                  <input
-                    checked={settingsDraft.command_behavior === "execute"}
-                    class="sr-only"
-                    name="command-behavior"
-                    onchange={() => updateCommandBehavior("execute")}
-                    type="radio"
-                  />
-                  Execute
-                </label>
-                <label
-                  class={[
-                    "rounded border px-3 py-2 text-sm",
-                    settingsDraft.command_behavior === "guide"
-                      ? "border-amber-500 bg-zinc-800 text-zinc-100"
-                      : "border-zinc-700 text-zinc-300",
-                  ].join(" ")}
-                >
-                  <input
-                    checked={settingsDraft.command_behavior === "guide"}
-                    class="sr-only"
-                    name="command-behavior"
-                    onchange={() => updateCommandBehavior("guide")}
-                    type="radio"
-                  />
-                  Guide
-                </label>
+            <section class="settings-section">
+              <h3 class="settings-section-title">Debug</h3>
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row-label">Context overlay</p>
+                  <p class="settings-row-description">
+                    Inspect the active context used for filtering commands.
+                  </p>
+                </div>
+                <div class="settings-row-control">
+                  <button
+                    class="settings-button"
+                    onclick={showDebugOverlay}
+                    type="button"
+                  >
+                    Pop up debugger
+                  </button>
+                </div>
               </div>
             </section>
 
-            <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
-              <h3 class="text-sm font-medium text-zinc-200">Debug</h3>
-              <div class="mt-3">
-                <button
-                  class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100"
-                  onclick={showDebugOverlay}
-                  type="button"
-                >
-                  Pop up debugger
-                </button>
+            <section class="settings-section">
+              <h3 class="settings-section-title">Storage</h3>
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row-label">User config</p>
+                  <p class="settings-row-description">
+                    Runtime preferences are saved as TOML.
+                  </p>
+                </div>
+                <div class="settings-row-control">
+                  <span class="settings-chip settings-path-chip">
+                    {settingsConfigPath ?? "Config path unavailable"}
+                  </span>
+                </div>
               </div>
-            </section>
-
-            <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
-              <h3 class="text-sm font-medium text-zinc-200">Storage</h3>
-              <p class="mt-3 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-300">
-                {settingsConfigPath ?? "Config path unavailable"}
-              </p>
             </section>
           </div>
         {:else if activeSettingsPage === "extensions"}
@@ -1172,13 +1231,13 @@
         {/if}
 
         {#if activeSettingsPage !== "extensions"}
-          <div class="mt-6 flex items-center justify-between gap-3 border-t border-zinc-800 pt-4">
-            <span class="text-sm text-zinc-400">
+          <div class="mt-6 flex items-center justify-between gap-3 border-t border-[var(--settings-border-soft)] pt-4">
+            <span class="text-sm text-[var(--settings-text-muted)]">
               {settingsDirty ? "Unsaved changes" : "Settings are current"}
             </span>
             <div class="flex gap-2">
               <button
-                class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+                class="settings-button"
                 disabled={!settingsDirty || settingsSaving}
                 onclick={discardSettingsChanges}
                 type="button"
@@ -1186,7 +1245,7 @@
                 Discard
               </button>
               <button
-                class="rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:bg-zinc-700 disabled:text-zinc-400"
+                class="settings-primary-button"
                 disabled={!settingsDirty || settingsSaving}
                 onclick={saveRuntimeSettings}
                 type="button"

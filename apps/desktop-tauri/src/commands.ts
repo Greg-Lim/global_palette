@@ -54,6 +54,7 @@ export type RuntimeStatus = {
 };
 
 export type AppearanceTheme = "system" | "light" | "dark";
+export type ResolvedAppearanceTheme = "light" | "dark";
 
 export type GitHubCatalogSource = {
   owner: string;
@@ -62,6 +63,14 @@ export type GitHubCatalogSource = {
   catalog_path: string;
   enabled: boolean;
 };
+
+type ThemeRoot = {
+  dataset: {
+    theme?: string;
+  };
+};
+
+type ThemeMatchMedia = (query: string) => MediaQueryList;
 
 export type ActivationShortcut = {
   control: boolean;
@@ -609,6 +618,50 @@ export function shouldHidePaletteForWindowBlur(
   status: WindowLifecycleStatus | null,
 ): boolean {
   return status?.visible === true;
+}
+
+function systemPrefersDark(): boolean {
+  return globalThis.window?.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+}
+
+export function resolveAppearanceTheme(
+  theme: AppearanceTheme,
+  systemDark = systemPrefersDark(),
+): ResolvedAppearanceTheme {
+  if (theme === "light" || theme === "dark") {
+    return theme;
+  }
+
+  return systemDark ? "dark" : "light";
+}
+
+export function applyAppearanceTheme(
+  theme: AppearanceTheme,
+  root: ThemeRoot | null | undefined = globalThis.document?.documentElement,
+  systemDark = systemPrefersDark(),
+): ResolvedAppearanceTheme {
+  const resolved = resolveAppearanceTheme(theme, systemDark);
+  if (root) {
+    root.dataset.theme = resolved;
+  }
+  return resolved;
+}
+
+export function watchSystemAppearanceTheme(
+  theme: AppearanceTheme,
+  onChange: () => void,
+  matchMedia: ThemeMatchMedia | undefined = globalThis.window?.matchMedia?.bind(
+    globalThis.window,
+  ),
+): () => void {
+  if (theme !== "system" || !matchMedia) {
+    return () => {};
+  }
+
+  const mediaQuery = matchMedia("(prefers-color-scheme: dark)");
+  const listener = () => onChange();
+  mediaQuery.addEventListener("change", listener);
+  return () => mediaQuery.removeEventListener("change", listener);
 }
 
 export function runtimeSettingsSaveRequestFromDraft(

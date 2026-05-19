@@ -2,7 +2,181 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+  --settings-bg: #120e0a;
+  --settings-sidebar-bg: #18120d;
+  --settings-surface: #1e1812;
+  --settings-surface-alt: #261e16;
+  --settings-input-bg: #160f0a;
+  --settings-input-hover: #34271b;
+  --settings-border: #593d24;
+  --settings-border-soft: #412f20;
+  --settings-accent: #ff9530;
+  --settings-accent-soft: #7a4018;
+  --settings-primary-button-bg: #5c3314;
+  --settings-primary-button-border: #d27728;
+  --settings-primary-button-text: #ffeecc;
+  --settings-text-primary: #f5e8d2;
+  --settings-text-secondary: #c7ae89;
+  --settings-text-muted: #82694d;
+  --settings-success-bg: #0f3d2a;
+  --settings-success-border: #277a52;
+  --settings-success-text: #a7f3c7;
+  --settings-error-bg: #3a1d19;
+  --settings-error-border: #b94a40;
+  --settings-error-text: #ffbeb5;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --settings-bg: #f6efe6;
+  --settings-sidebar-bg: #efe2d0;
+  --settings-surface: #fff8ef;
+  --settings-surface-alt: #f2e2cd;
+  --settings-input-bg: #fffdf9;
+  --settings-input-hover: #ffebcf;
+  --settings-border: #d9b98e;
+  --settings-border-soft: #ead7bf;
+  --settings-accent: #d96d1c;
+  --settings-accent-soft: #f2c491;
+  --settings-primary-button-bg: #ae520c;
+  --settings-primary-button-border: #d96d1c;
+  --settings-primary-button-text: #fff8ef;
+  --settings-text-primary: #2b1e15;
+  --settings-text-secondary: #684c32;
+  --settings-text-muted: #8d6f53;
+  --settings-success-bg: #def7ea;
+  --settings-success-border: #227a52;
+  --settings-success-text: #17583a;
+  --settings-error-bg: #ffe0db;
+  --settings-error-border: #bf3e37;
+  --settings-error-text: #7a251f;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 html,
 body {
   margin: 0;
+  background: var(--settings-bg);
+  color: var(--settings-text-primary);
+}
+
+.settings-section {
+  overflow: hidden;
+  border: 1px solid var(--settings-border-soft);
+  border-radius: 8px;
+  background: var(--settings-surface);
+}
+
+.settings-section-title {
+  border-bottom: 1px solid var(--settings-border-soft);
+  padding: 12px 16px;
+  color: var(--settings-text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.42fr) minmax(16rem, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--settings-border-soft);
+}
+
+.settings-row-label {
+  color: var(--settings-text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-row-description {
+  margin-top: 0.25rem;
+  color: var(--settings-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.settings-row-control {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-button,
+.settings-segmented-option,
+.settings-chip {
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  background: var(--settings-input-bg);
+  color: var(--settings-text-primary);
+  font-size: 0.875rem;
+}
+
+.settings-button,
+.settings-segmented-option {
+  padding: 0.5rem 0.75rem;
+}
+
+.settings-chip {
+  padding: 0.5rem 0.75rem;
+  color: var(--settings-text-secondary);
+}
+
+.settings-button:hover,
+.settings-segmented-option:hover {
+  border-color: var(--settings-accent);
+  background: var(--settings-input-hover);
+}
+
+.settings-button:disabled {
+  border-color: var(--settings-border-soft);
+  color: var(--settings-text-muted);
+}
+
+.settings-segmented-option-selected {
+  border-color: var(--settings-accent);
+  background: var(--settings-accent-soft);
+  color: var(--settings-text-primary);
+}
+
+.settings-primary-button {
+  border: 1px solid var(--settings-primary-button-border);
+  border-radius: 6px;
+  background: var(--settings-primary-button-bg);
+  color: var(--settings-primary-button-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+}
+
+.settings-primary-button:disabled {
+  border-color: var(--settings-border-soft);
+  background: var(--settings-surface-alt);
+  color: var(--settings-text-muted);
+}
+
+.settings-path-chip {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-row-control {
+    justify-content: flex-start;
+  }
 }

@@ -88,11 +88,14 @@ describe("Svelte frontend entrypoint", () => {
     expect(settingsSource).toContain("Command behavior");
     expect(settingsSource).toContain("Pop up debugger");
     expect(settingsSource).toContain("showDebugOverlay");
-    expect(settingsSource).toContain(
-      '<h3 class="text-sm font-medium text-zinc-200">Activation shortcut</h3>',
-    );
-    expect(settingsSource).toContain(
-      '<h3 class="text-sm font-medium text-zinc-200">Command behavior</h3>',
+    expect(settingsSource).toContain("settings-section");
+    expect(settingsSource).toContain("settings-row");
+    expect(settingsSource).toContain("settings-row-label");
+    expect(settingsSource).toContain("settings-row-control");
+    expect(settingsSource).toContain("applySettingsAppearanceTheme");
+    expect(settingsSource).toContain("watchSystemAppearanceTheme");
+    expect(settingsSource).not.toContain(
+      '<legend class="px-1 text-sm font-medium text-zinc-200">Appearance</legend>',
     );
     expect(settingsSource).not.toContain("Activation shortcut\n              </legend>");
     expect(settingsSource).not.toContain("Command behavior</legend>");

@@ -49,6 +49,7 @@ import {
   runtimeSettingsAreDirty,
   runtimeSettingsSaveRequestFromDraft,
   applyRuntimeSettingsSaveResult,
+  applyAppearanceTheme,
   discardRuntimeSettingsDraft,
   isOpenSettingsCommand,
   isRefreshExtensionsCommand,
@@ -63,6 +64,8 @@ import {
   shouldStartGuideForCommand,
   shouldHidePaletteForWindowBlur,
   shouldRefreshCommandsForWindowLifecycleEvent,
+  resolveAppearanceTheme,
+  watchSystemAppearanceTheme,
   updateExtensionSettingListEntry,
   updateExtensionSettingToggle,
 } from "./commands";
@@ -1254,6 +1257,48 @@ describe("guide command activation", () => {
 });
 
 describe("runtime settings helpers", () => {
+  it("applies explicit light and dark appearance themes to the document root", () => {
+    const root = { dataset: {} as Record<string, string> };
+
+    expect(applyAppearanceTheme("light", root, true)).toBe("light");
+    expect(root.dataset.theme).toBe("light");
+    expect(applyAppearanceTheme("dark", root, false)).toBe("dark");
+    expect(root.dataset.theme).toBe("dark");
+  });
+
+  it("resolves system appearance through the OS color-scheme preference", () => {
+    expect(resolveAppearanceTheme("system", true)).toBe("dark");
+    expect(resolveAppearanceTheme("system", false)).toBe("light");
+    expect(resolveAppearanceTheme("system")).toBe("dark");
+  });
+
+  it("watches system color-scheme changes only for the system appearance mode", () => {
+    const calls: Array<() => void> = [];
+    const removed: Array<() => void> = [];
+    const matchMedia = () =>
+      ({
+        matches: false,
+        addEventListener: (_event: "change", listener: () => void) => calls.push(listener),
+        removeEventListener: (_event: "change", listener: () => void) => removed.push(listener),
+      }) as MediaQueryList;
+    let applyCount = 0;
+
+    const cleanup = watchSystemAppearanceTheme("system", () => {
+      applyCount += 1;
+    }, matchMedia);
+
+    expect(calls).toHaveLength(1);
+    calls[0]();
+    expect(applyCount).toBe(1);
+    cleanup();
+    expect(removed).toEqual(calls);
+
+    watchSystemAppearanceTheme("dark", () => {
+      applyCount += 1;
+    }, matchMedia);
+    expect(calls).toHaveLength(1);
+  });
+
   it("detects dirty editable settings including activation shortcut changes", () => {
     expect(runtimeSettingsAreDirty(runtimeSettings, runtimeSettings)).toBe(false);
     expect(
