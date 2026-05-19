@@ -67,22 +67,22 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<main class="flex min-h-screen items-center justify-center bg-transparent p-4 text-zinc-100">
-  <section class="w-full rounded-lg border border-amber-500/60 bg-zinc-950/[0.92] px-5 py-4">
+<main class="flex h-screen overflow-hidden items-center justify-center bg-transparent p-4 text-zinc-100">
+  <section class="w-full rounded-lg border border-amber-500/60 bg-zinc-950/[0.92] px-6 py-5">
     {#if error}
       <p class="text-sm text-red-300">{error}</p>
     {:else if guideStatus?.active}
       <p class="text-sm font-semibold">{guideStatus.command_label}</p>
 
       {#if shortcutParts.length > 0}
-        <div class="mt-4 flex flex-wrap items-center gap-2">
+        <div class="mt-4 flex flex-wrap items-center gap-3">
           {#each shortcutParts as chord, chordIndex}
             {#if chordIndex > 0}
               <span class="text-xs text-zinc-500">then</span>
             {/if}
-            <span class="flex items-center gap-1">
+            <span class="flex items-center gap-2">
               {#each chord as key}
-                <kbd class="min-h-12 min-w-16 rounded-md border border-zinc-600 bg-zinc-900 px-4 py-3 text-center text-base font-semibold text-amber-200">
+                <kbd class="min-h-24 min-w-32 rounded-md border border-zinc-600 bg-zinc-900 px-8 py-6 text-center text-2xl font-semibold text-amber-200">
                   {key}
                 </kbd>
               {/each}

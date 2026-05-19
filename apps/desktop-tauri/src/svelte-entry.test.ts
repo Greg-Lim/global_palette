@@ -147,11 +147,12 @@ describe("Svelte frontend entrypoint", () => {
     }
 
     const guideSource = readFileSync(guidePath, "utf8");
+    expect(guideSource).toContain("flex h-screen overflow-hidden");
     expect(guideSource).toContain("bg-zinc-950/[0.92]");
     expect(guideSource).not.toContain("shadow-2xl");
-    expect(guideSource).toContain("min-h-12 min-w-16");
-    expect(guideSource).toContain("px-4 py-3");
-    expect(guideSource).toContain("text-base");
+    expect(guideSource).toContain("min-h-24 min-w-32");
+    expect(guideSource).toContain("px-8 py-6");
+    expect(guideSource).toContain("text-2xl");
   });
 
   it("declares separate palette, settings, and guide Tauri windows", () => {
@@ -179,6 +180,7 @@ describe("Svelte frontend entrypoint", () => {
     });
     expect(guideWindow).toMatchObject({
       label: "guide",
+      height: 320,
       visible: false,
     });
     expect(debugWindow).toMatchObject({

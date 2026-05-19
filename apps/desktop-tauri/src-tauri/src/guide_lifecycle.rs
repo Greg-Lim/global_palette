@@ -16,7 +16,7 @@ pub const GUIDE_EVENT_NAME: &str = "omni://palette-guide";
 pub const GUIDE_DURATION: Duration = Duration::from_secs(8);
 const GUIDE_WINDOW_LABEL: &str = "guide";
 const GUIDE_WINDOW_WIDTH: u32 = 560;
-const GUIDE_WINDOW_HEIGHT: u32 = 218;
+const GUIDE_WINDOW_HEIGHT: u32 = 320;
 const GUIDE_VERTICAL_POSITION_FACTOR: f32 = 0.45;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
