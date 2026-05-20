@@ -372,11 +372,17 @@
       <div class="palette-header p-4">
         <label class="sr-only" for="command-search">Search commands</label>
         <input
+          aria-autocomplete="none"
+          autocapitalize="none"
+          autocomplete="off"
+          autocorrect="off"
           bind:this={searchInput}
           bind:value={query}
           class="palette-search w-full px-3 py-2 text-base"
           id="command-search"
+          name="omni-palette-transient-command-query"
           placeholder="Type a command"
+          spellcheck={false}
         />
       </div>
 

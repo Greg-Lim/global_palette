@@ -55,6 +55,12 @@ describe("Svelte frontend entrypoint", () => {
     expect(appSource).toContain("palette-surface");
     expect(appSource).toContain("palette-row-selected");
     expect(appSource).toContain("h-screen overflow-hidden");
+    expect(appSource).toContain('id="command-search"');
+    expect(appSource).toContain('autocomplete="off"');
+    expect(appSource).toContain('autocapitalize="none"');
+    expect(appSource).toContain('autocorrect="off"');
+    expect(appSource).toContain('spellcheck={false}');
+    expect(appSource).toContain('aria-autocomplete="none"');
     expect(appSource).toContain("palette-results-scroll");
     expect(appSource).toContain("bind:this={resultsScroller}");
     expect(appSource).toContain("handleResultsScroll");
