@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import ToggleSwitch from "./ToggleSwitch.svelte";
 
   import type {
     ActivationShortcut,
@@ -624,21 +625,6 @@
     ].join(" ");
   }
 
-  function extensionToggleTrackClass(extension: ExtensionRow, disabled: boolean): string {
-    return [
-      "extension-toggle-switch relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition",
-      extension.enabled ? "settings-toggle-track-on" : "settings-toggle-track-off",
-      disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
-    ].join(" ");
-  }
-
-  function extensionToggleThumbClass(extension: ExtensionRow): string {
-    return [
-      "settings-toggle-thumb inline-block h-4 w-4 rounded-full shadow transition",
-      extension.enabled ? "translate-x-4" : "translate-x-0.5",
-    ].join(" ");
-  }
-
   function installedVersionForCatalogEntry(entry: CatalogEntry): string | null {
     return (
       extensionsBootstrap?.downloaded_extensions.find(
@@ -667,10 +653,6 @@
 
   function inputValue(event: Event): string {
     return (event.currentTarget as HTMLInputElement).value;
-  }
-
-  function checkedValue(event: Event): boolean {
-    return (event.currentTarget as HTMLInputElement).checked;
   }
 
   function errorMessage(error: unknown): string {
@@ -969,26 +951,13 @@
                           <span class={extensionStatusPillClass(extension)}>
                             {extensionStatusLabel(extension)}
                           </span>
-                          <label class="inline-flex items-center">
-                            <input
-                              aria-label={`Toggle ${extension.name}`}
-                              checked={extension.enabled}
-                              class="sr-only"
-                              disabled={extensionMutationKey === extensionKey(extension)}
-                              onchange={(event) =>
-                                setExtensionEnabled(extension, checkedValue(event))}
-                              type="checkbox"
-                            />
-                            <span
-                              aria-hidden="true"
-                              class={extensionToggleTrackClass(
-                                extension,
-                                extensionMutationKey === extensionKey(extension),
-                              )}
-                            >
-                              <span class={extensionToggleThumbClass(extension)}></span>
-                            </span>
-                          </label>
+                          <ToggleSwitch
+                            ariaLabel={`Toggle ${extension.name}`}
+                            checked={extension.enabled}
+                            disabled={extensionMutationKey === extensionKey(extension)}
+                            onToggle={(enabled) => setExtensionEnabled(extension, enabled)}
+                            updating={extensionMutationKey === extensionKey(extension)}
+                          />
                           {#if extension.has_settings}
                             <button
                               class="settings-button"
@@ -1034,26 +1003,13 @@
                             <span class={extensionStatusPillClass(extension)}>
                               {extensionStatusLabel(extension)}
                             </span>
-                            <label class="inline-flex items-center">
-                              <input
-                                aria-label={`Toggle ${extension.name}`}
-                                checked={extension.enabled}
-                                class="sr-only"
-                                disabled={extensionMutationKey === extensionKey(extension)}
-                                onchange={(event) =>
-                                  setExtensionEnabled(extension, checkedValue(event))}
-                                type="checkbox"
-                              />
-                              <span
-                                aria-hidden="true"
-                                class={extensionToggleTrackClass(
-                                  extension,
-                                  extensionMutationKey === extensionKey(extension),
-                                )}
-                              >
-                                <span class={extensionToggleThumbClass(extension)}></span>
-                              </span>
-                            </label>
+                            <ToggleSwitch
+                              ariaLabel={`Toggle ${extension.name}`}
+                              checked={extension.enabled}
+                              disabled={extensionMutationKey === extensionKey(extension)}
+                              onToggle={(enabled) => setExtensionEnabled(extension, enabled)}
+                              updating={extensionMutationKey === extensionKey(extension)}
+                            />
                             {#if extension.has_settings}
                               <button
                                 class="settings-button"
@@ -1087,15 +1043,14 @@
           <div class="space-y-6">
             <fieldset class="settings-card p-4">
               <legend class="settings-section-heading px-1 text-sm font-medium">Catalog source</legend>
-              <label class="settings-label flex items-center gap-3 text-sm">
-                <input
+              <div class="settings-label flex items-center gap-3 text-sm">
+                <ToggleSwitch
+                  ariaLabel="Enable GitHub catalog source"
                   checked={settingsDraft.github.enabled}
-                  class="settings-checkbox h-4 w-4 rounded"
-                  onchange={(event) => updateCatalogEnabled(checkedValue(event))}
-                  type="checkbox"
+                  onToggle={updateCatalogEnabled}
                 />
-                Enable GitHub catalog source
-              </label>
+                <span>Enable GitHub catalog source</span>
+              </div>
               <div class="mt-4 grid gap-3 sm:grid-cols-2">
                 <label class="settings-label grid gap-1 text-sm">
                   Owner
@@ -1302,37 +1257,34 @@
                     {/if}
                   </div>
                   {#each categoryToggleItems(section) as toggleItem}
-                    <label class="settings-label flex items-center gap-2 text-sm">
-                      <input
-                        class="settings-checkbox"
+                    <div class="settings-label flex items-center gap-2 text-sm">
+                      <ToggleSwitch
+                        ariaLabel={`Toggle ${toggleItem.label}`}
                         checked={extensionSettingToggleValue(extensionSettingsPanel.draft, toggleItem)}
-                        onchange={(event) =>
-                          setExtensionSettingToggle(toggleItem.key, checkedValue(event))}
-                        type="checkbox"
+                        onToggle={(enabled) =>
+                          setExtensionSettingToggle(toggleItem.key, enabled)}
                       />
-                      {toggleItem.label}
-                    </label>
+                      <span>{toggleItem.label}</span>
+                    </div>
                   {/each}
                 </div>
 
                 <div class="mt-4 grid gap-3">
                   {#each visibleSectionItems(section) as item}
                     {#if item.kind === "toggle"}
-                      <label class="settings-subcard flex items-start justify-between gap-3 p-3 text-sm">
+                      <div class="settings-subcard flex items-start justify-between gap-3 p-3 text-sm">
                         <span>
                           <span class="settings-label block">{item.label}</span>
                           {#if item.description}
                             <span class="settings-muted mt-1 block">{item.description}</span>
                           {/if}
                         </span>
-                        <input
-                          class="settings-checkbox"
+                        <ToggleSwitch
+                          ariaLabel={`Toggle ${item.label}`}
                           checked={extensionSettingToggleValue(extensionSettingsPanel.draft, item)}
-                          onchange={(event) =>
-                            setExtensionSettingToggle(item.key, checkedValue(event))}
-                          type="checkbox"
+                          onToggle={(enabled) => setExtensionSettingToggle(item.key, enabled)}
                         />
-                      </label>
+                      </div>
                     {:else}
                       <div class="settings-subcard p-3">
                         <div class="flex flex-wrap items-start justify-between gap-3">
@@ -1354,18 +1306,17 @@
                         <div class="mt-3 grid gap-2">
                           {#each extensionSettingListValue(extensionSettingsPanel.draft, item) as entry, index (entry.id)}
                             <div class="settings-card grid gap-2 p-3 md:grid-cols-[auto_1fr_1fr_auto]">
-                              <label class="settings-label flex items-center gap-2 text-sm">
-                                <input
-                                  class="settings-checkbox"
+                              <div class="settings-label flex items-center gap-2 text-sm">
+                                <ToggleSwitch
+                                  ariaLabel={`Toggle ${entry.name || "entry"} enabled`}
                                   checked={entry.enabled}
-                                  onchange={(event) =>
+                                  onToggle={(enabled) =>
                                     updateExtensionSettingEntry(item.key, index, {
-                                      enabled: checkedValue(event),
+                                      enabled,
                                     })}
-                                  type="checkbox"
                                 />
-                                Enabled
-                              </label>
+                                <span>Enabled</span>
+                              </div>
                               <input
                                 class="settings-input px-3 py-2 text-sm"
                                 placeholder="Name"

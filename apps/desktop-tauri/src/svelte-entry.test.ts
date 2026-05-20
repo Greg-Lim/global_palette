@@ -101,6 +101,7 @@ describe("Svelte frontend entrypoint", () => {
     expect(settingsSource).toContain("configureAppearanceTheme");
     expect(settingsSource).toContain("settings-card");
     expect(settingsSource).toContain("settings-modal-panel");
+    expect(settingsSource).toContain('from "./ToggleSwitch.svelte"');
     expect(settingsSource).not.toMatch(/(?:bg|text|border)-(?:zinc|red|emerald|amber)-/);
     expect(settingsSource).not.toContain(
       '<legend class="px-1 text-sm font-medium text-zinc-200">Appearance</legend>',
@@ -112,8 +113,11 @@ describe("Svelte frontend entrypoint", () => {
     expect(settingsSource).toContain("No downloaded extensions installed yet.");
     expect(settingsSource).toContain("extensionStatusLabel");
     expect(settingsSource).toContain("extension-status-pill");
-    expect(settingsSource).toContain("extension-toggle-switch");
-    expect(settingsSource).toContain("aria-label={`Toggle ${extension.name}`}");
+    expect(settingsSource).toContain("ToggleSwitch");
+    expect(settingsSource).toContain("ariaLabel={`Toggle ${extension.name}`}");
+    expect(settingsSource).not.toContain("extensionToggleTrackClass");
+    expect(settingsSource).not.toContain("extensionToggleThumbClass");
+    expect(settingsSource).not.toContain("settings-checkbox");
     expect(settingsSource).toContain("Catalog source");
     expect(settingsSource).toContain("Save Source");
     expect(settingsSource).toContain("Refresh Catalog");
@@ -127,6 +131,28 @@ describe("Svelte frontend entrypoint", () => {
     expect(settingsSource).toContain("Reset Defaults");
     expect(settingsSource).toContain("Add Entry");
     expect(settingsSource).not.toContain("Extension settings panels arrive in Phase 6C.3.");
+  });
+
+  it("provides a Handy-style toggle switch component for settings booleans", () => {
+    const togglePath = join(srcDir, "ToggleSwitch.svelte");
+
+    expect(existsSync(togglePath)).toBe(true);
+
+    if (!existsSync(togglePath)) {
+      return;
+    }
+
+    const toggleSource = readFileSync(togglePath, "utf8");
+    expect(toggleSource).toContain("export let checked");
+    expect(toggleSource).toContain("export let ariaLabel");
+    expect(toggleSource).toContain("export let onToggle");
+    expect(toggleSource).toContain('type="checkbox"');
+    expect(toggleSource).toContain('role="switch"');
+    expect(toggleSource).toContain('class="sr-only"');
+    expect(toggleSource).toContain("toggle-switch-track");
+    expect(toggleSource).toContain("toggle-switch-thumb");
+    expect(toggleSource).toContain("toggle-switch-spinner");
+    expect(toggleSource).toContain("onchange={handleChange}");
   });
 
   it("renders a separate debug overlay surface", () => {
