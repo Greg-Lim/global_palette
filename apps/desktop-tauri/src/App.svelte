@@ -15,6 +15,7 @@
     GUIDE_EVENT_NAME,
     WINDOW_LIFECYCLE_EVENT_NAME,
     commandExecutionShouldHidePalette,
+    configureRuntimeAppearanceTheme,
     highlightedLabelSegments,
     isOpenSettingsCommand,
     isRefreshExtensionsCommand,
@@ -53,6 +54,21 @@
   $: searchCommands(query);
 
   onMount(() => {
+    let mounted = true;
+    let stopAppearanceTheme: (() => void) | null = null;
+
+    configureRuntimeAppearanceTheme(paletteApi)
+      .then((cleanup) => {
+        if (mounted) {
+          stopAppearanceTheme = cleanup;
+        } else {
+          cleanup();
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn("Failed to apply appearance theme", error);
+      });
+
     searchInput?.focus();
 
     paletteApi
@@ -114,6 +130,8 @@
     window.addEventListener("blur", handleWindowBlur);
 
     return () => {
+      mounted = false;
+      stopAppearanceTheme?.();
       unlistenWindowLifecycleEvents?.();
       unlistenGuideEvents?.();
       window.removeEventListener("blur", handleWindowBlur);
@@ -348,28 +366,28 @@
 
 <svelte:window onkeydown={handlePaletteKeydown} />
 
-<main class="h-screen overflow-hidden bg-zinc-950 p-3 text-zinc-100">
-  <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
-    <div class="shrink-0 bg-zinc-900">
-      <div class="border-b border-zinc-700 p-4">
+<main class="palette-shell h-screen overflow-hidden p-3">
+  <section class="palette-surface flex h-full min-h-0 flex-col overflow-hidden rounded-lg">
+    <div class="shrink-0">
+      <div class="palette-header p-4">
         <label class="sr-only" for="command-search">Search commands</label>
         <input
           bind:this={searchInput}
           bind:value={query}
-          class="w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-base text-zinc-100 outline-none focus:border-amber-500"
+          class="palette-search w-full px-3 py-2 text-base"
           id="command-search"
           placeholder="Type a command"
         />
       </div>
 
       {#if commandError}
-        <div class="border-b border-zinc-700 px-4 py-2 text-sm text-red-300">
+        <div class="palette-message palette-error px-4 py-2 text-sm">
           {commandError}
         </div>
       {/if}
 
       {#if executionResult}
-        <div class="border-b border-zinc-700 px-4 py-2 text-sm text-zinc-300">
+        <div class="palette-message px-4 py-2 text-sm">
           {executionResult.status}: {executionResult.message}
         </div>
       {/if}
@@ -382,7 +400,7 @@
         onscroll={handleResultsScroll}
       >
         {#if rows.length === 0}
-          <div class="rounded-md border border-dashed border-zinc-700 p-8 text-center text-sm text-zinc-400">
+          <div class="palette-empty p-8 text-center text-sm">
             {loadingCommands ? "Loading commands..." : "No matching commands"}
           </div>
         {:else}
@@ -391,8 +409,8 @@
             <button
               use:trackCommandRow={command.id}
               class={[
-                "flex w-full items-center justify-between rounded-md px-3 py-3 text-left",
-                selected ? "border border-amber-500 bg-zinc-800" : "border border-transparent",
+                "palette-row flex w-full items-center justify-between rounded-md px-3 py-3 text-left",
+                selected ? "palette-row-selected" : "",
               ].join(" ")}
               onclick={() => runCommand(command.id)}
               type="button"
@@ -400,14 +418,16 @@
               <span>
                 <span class="block text-sm font-medium">
                   {#each highlightedLabelSegments(command.label, command.label_matches) as segment}
-                    <span class={segment.highlighted ? "text-amber-300" : ""}>{segment.text}</span>
+                    <span class={segment.highlighted ? "palette-highlight" : ""}>
+                      {segment.text}
+                    </span>
                   {/each}
                 </span>
-                <span class="block text-xs text-zinc-400">
+                <span class="palette-meta block text-xs">
                   {command.focus_state} - {command.priority}
                 </span>
               </span>
-              <span class="text-xs text-zinc-400">
+              <span class="palette-meta text-xs">
                 {command.shortcut_text || "backend"}
               </span>
             </button>
@@ -417,14 +437,14 @@
       <div
         aria-hidden="true"
         class={[
-          "pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-zinc-900 to-transparent transition-opacity",
+          "palette-top-fade pointer-events-none absolute inset-x-0 top-0 h-10 transition-opacity",
           showTopFade ? "opacity-100" : "opacity-0",
         ].join(" ")}
       ></div>
       <div
         aria-hidden="true"
         class={[
-          "pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-zinc-900 to-transparent transition-opacity",
+          "palette-bottom-fade pointer-events-none absolute inset-x-0 bottom-0 h-10 transition-opacity",
           showBottomFade ? "opacity-100" : "opacity-0",
         ].join(" ")}
       ></div>

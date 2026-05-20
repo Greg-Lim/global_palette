@@ -72,6 +72,11 @@ type ThemeRoot = {
 
 type ThemeMatchMedia = (query: string) => MediaQueryList;
 
+type AppearanceThemeOptions = {
+  root?: ThemeRoot | null;
+  matchMedia?: ThemeMatchMedia;
+};
+
 export type ActivationShortcut = {
   control: boolean;
   shift: boolean;
@@ -624,6 +629,10 @@ function systemPrefersDark(): boolean {
   return globalThis.window?.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
 }
 
+function systemPrefersDarkWithMatchMedia(matchMedia: ThemeMatchMedia | undefined): boolean {
+  return matchMedia?.("(prefers-color-scheme: dark)").matches ?? systemPrefersDark();
+}
+
 export function resolveAppearanceTheme(
   theme: AppearanceTheme,
   systemDark = systemPrefersDark(),
@@ -662,6 +671,28 @@ export function watchSystemAppearanceTheme(
   const listener = () => onChange();
   mediaQuery.addEventListener("change", listener);
   return () => mediaQuery.removeEventListener("change", listener);
+}
+
+export function configureAppearanceTheme(
+  theme: AppearanceTheme,
+  options: AppearanceThemeOptions = {},
+): () => void {
+  const root = options.root ?? globalThis.document?.documentElement;
+  const matchMedia =
+    options.matchMedia ?? globalThis.window?.matchMedia?.bind(globalThis.window);
+  const apply = () =>
+    applyAppearanceTheme(theme, root, systemPrefersDarkWithMatchMedia(matchMedia));
+
+  apply();
+  return watchSystemAppearanceTheme(theme, apply, matchMedia);
+}
+
+export async function configureRuntimeAppearanceTheme(
+  api: Pick<ReturnType<typeof createPaletteApi>, "getSettingsBootstrap"> = paletteApi,
+  options: AppearanceThemeOptions = {},
+): Promise<() => void> {
+  const bootstrap = await api.getSettingsBootstrap();
+  return configureAppearanceTheme(bootstrap.config.appearance_theme, options);
 }
 
 export function runtimeSettingsSaveRequestFromDraft(

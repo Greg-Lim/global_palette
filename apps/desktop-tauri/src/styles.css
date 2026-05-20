@@ -26,6 +26,26 @@
   --settings-error-bg: #3a1d19;
   --settings-error-border: #b94a40;
   --settings-error-text: #ffbeb5;
+  --settings-danger-border: #b94a40;
+  --settings-danger-text: #ffbeb5;
+  --settings-disabled-text: #66513b;
+  --app-bg: var(--settings-bg);
+  --app-sidebar-bg: var(--settings-sidebar-bg);
+  --app-surface: var(--settings-surface);
+  --app-surface-alt: var(--settings-surface-alt);
+  --app-input-bg: var(--settings-input-bg);
+  --app-input-hover: var(--settings-input-hover);
+  --app-border: var(--settings-border);
+  --app-border-soft: var(--settings-border-soft);
+  --app-accent: var(--settings-accent);
+  --app-accent-soft: var(--settings-accent-soft);
+  --app-text-primary: var(--settings-text-primary);
+  --app-text-secondary: var(--settings-text-secondary);
+  --app-text-muted: var(--settings-text-muted);
+  --app-overlay-backdrop: rgba(18, 14, 10, 0.55);
+  --app-guide-bg: rgba(18, 14, 10, 0.94);
+  --app-guide-key-bg: rgba(38, 30, 22, 0.95);
+  --app-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
 }
 
 :root[data-theme="light"] {
@@ -52,6 +72,13 @@
   --settings-error-bg: #ffe0db;
   --settings-error-border: #bf3e37;
   --settings-error-text: #7a251f;
+  --settings-danger-border: #bf3e37;
+  --settings-danger-text: #7a251f;
+  --settings-disabled-text: #a78b6c;
+  --app-overlay-backdrop: rgba(62, 45, 29, 0.28);
+  --app-guide-bg: rgba(255, 248, 239, 0.94);
+  --app-guide-key-bg: rgba(255, 253, 249, 0.96);
+  --app-shadow: 0 18px 50px rgba(84, 56, 28, 0.18);
 }
 
 :root[data-theme="dark"] {
@@ -61,21 +88,91 @@
 html,
 body {
   margin: 0;
-  background: var(--settings-bg);
-  color: var(--settings-text-primary);
+  background: var(--app-bg);
+  color: var(--app-text-primary);
+}
+
+.settings-shell {
+  min-height: 100vh;
+  background: var(--app-bg);
+  color: var(--app-text-primary);
+}
+
+.settings-sidebar {
+  border-right: 1px solid var(--app-border-soft);
+  background: var(--app-sidebar-bg);
+}
+
+.settings-nav-description,
+.settings-muted {
+  color: var(--app-text-muted);
+}
+
+.settings-label,
+.settings-section-heading {
+  color: var(--app-text-primary);
+}
+
+.settings-card {
+  border: 1px solid var(--app-border-soft);
+  border-radius: 8px;
+  background: var(--app-surface);
+}
+
+.settings-subcard {
+  border: 1px solid var(--app-border-soft);
+  border-radius: 8px;
+  background: var(--app-input-bg);
+}
+
+.settings-empty {
+  border: 1px solid var(--app-border-soft);
+  border-radius: 6px;
+  background: var(--app-input-bg);
+  color: var(--app-text-muted);
+}
+
+.settings-input {
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-input-bg);
+  color: var(--app-text-primary);
+  outline: none;
+}
+
+.settings-input:focus {
+  border-color: var(--app-accent);
+}
+
+.settings-checkbox {
+  accent-color: var(--app-accent);
+}
+
+.settings-success-message {
+  border: 1px solid var(--settings-success-border);
+  border-radius: 6px;
+  background: var(--settings-success-bg);
+  color: var(--settings-success-text);
+}
+
+.settings-error-message {
+  border: 1px solid var(--settings-error-border);
+  border-radius: 6px;
+  background: var(--settings-error-bg);
+  color: var(--settings-error-text);
 }
 
 .settings-section {
   overflow: hidden;
-  border: 1px solid var(--settings-border-soft);
+  border: 1px solid var(--app-border-soft);
   border-radius: 8px;
-  background: var(--settings-surface);
+  background: var(--app-surface);
 }
 
 .settings-section-title {
-  border-bottom: 1px solid var(--settings-border-soft);
+  border-bottom: 1px solid var(--app-border-soft);
   padding: 12px 16px;
-  color: var(--settings-text-primary);
+  color: var(--app-text-primary);
   font-size: 0.875rem;
   font-weight: 600;
 }
@@ -93,14 +190,14 @@ body {
 }
 
 .settings-row-label {
-  color: var(--settings-text-primary);
+  color: var(--app-text-primary);
   font-size: 0.875rem;
   font-weight: 600;
 }
 
 .settings-row-description {
   margin-top: 0.25rem;
-  color: var(--settings-text-muted);
+  color: var(--app-text-muted);
   font-size: 0.8125rem;
   line-height: 1.35;
 }
@@ -117,8 +214,8 @@ body {
 .settings-chip {
   border: 1px solid var(--settings-border);
   border-radius: 6px;
-  background: var(--settings-input-bg);
-  color: var(--settings-text-primary);
+  background: var(--app-input-bg);
+  color: var(--app-text-primary);
   font-size: 0.875rem;
 }
 
@@ -129,24 +226,24 @@ body {
 
 .settings-chip {
   padding: 0.5rem 0.75rem;
-  color: var(--settings-text-secondary);
+  color: var(--app-text-secondary);
 }
 
 .settings-button:hover,
 .settings-segmented-option:hover {
-  border-color: var(--settings-accent);
-  background: var(--settings-input-hover);
+  border-color: var(--app-accent);
+  background: var(--app-input-hover);
 }
 
 .settings-button:disabled {
-  border-color: var(--settings-border-soft);
-  color: var(--settings-text-muted);
+  border-color: var(--app-border-soft);
+  color: var(--settings-disabled-text);
 }
 
 .settings-segmented-option-selected {
-  border-color: var(--settings-accent);
-  background: var(--settings-accent-soft);
-  color: var(--settings-text-primary);
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  color: var(--app-text-primary);
 }
 
 .settings-primary-button {
@@ -160,15 +257,164 @@ body {
 }
 
 .settings-primary-button:disabled {
-  border-color: var(--settings-border-soft);
-  background: var(--settings-surface-alt);
-  color: var(--settings-text-muted);
+  border-color: var(--app-border-soft);
+  background: var(--app-surface-alt);
+  color: var(--settings-disabled-text);
+}
+
+.settings-danger-button {
+  border: 1px solid var(--settings-danger-border);
+  border-radius: 6px;
+  background: var(--app-input-bg);
+  color: var(--settings-danger-text);
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.settings-danger-button:disabled {
+  border-color: var(--app-border-soft);
+  color: var(--settings-disabled-text);
+}
+
+.settings-status-pill-enabled {
+  border-color: var(--settings-success-border);
+  background: var(--settings-success-bg);
+  color: var(--settings-success-text);
+}
+
+.settings-status-pill-disabled {
+  border-color: var(--app-border);
+  background: var(--app-input-bg);
+  color: var(--app-text-secondary);
+}
+
+.settings-toggle-track-on {
+  border-color: var(--app-accent);
+  background: var(--app-accent);
+}
+
+.settings-toggle-track-off {
+  border-color: var(--app-border);
+  background: var(--app-input-bg);
+}
+
+.settings-toggle-thumb {
+  background: var(--app-bg);
+}
+
+.settings-modal-backdrop {
+  background: var(--app-overlay-backdrop);
+}
+
+.settings-modal-panel {
+  border: 1px solid var(--app-border-soft);
+  border-radius: 8px;
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow);
+}
+
+.settings-modal-footer {
+  border-top: 1px solid var(--app-border-soft);
 }
 
 .settings-path-chip {
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
+}
+
+.palette-shell {
+  background: var(--app-bg);
+  color: var(--app-text-primary);
+}
+
+.palette-surface {
+  border: 1px solid var(--app-border-soft);
+  background: var(--app-surface);
+}
+
+.palette-header {
+  border-bottom: 1px solid var(--app-border-soft);
+  background: var(--app-surface);
+}
+
+.palette-search {
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-input-bg);
+  color: var(--app-text-primary);
+  outline: none;
+}
+
+.palette-search:focus {
+  border-color: var(--app-accent);
+}
+
+.palette-message {
+  border-bottom: 1px solid var(--app-border-soft);
+  color: var(--app-text-secondary);
+}
+
+.palette-error {
+  color: var(--settings-error-text);
+}
+
+.palette-empty {
+  border: 1px dashed var(--app-border);
+  border-radius: 6px;
+  color: var(--app-text-muted);
+}
+
+.palette-row {
+  border: 1px solid transparent;
+  color: var(--app-text-primary);
+}
+
+.palette-row-selected {
+  border-color: var(--app-accent);
+  background: var(--app-surface-alt);
+}
+
+.palette-highlight {
+  color: var(--app-accent);
+}
+
+.palette-meta {
+  color: var(--app-text-muted);
+}
+
+.palette-top-fade {
+  background: linear-gradient(to bottom, var(--app-surface), transparent);
+}
+
+.palette-bottom-fade {
+  background: linear-gradient(to top, var(--app-surface), transparent);
+}
+
+.guide-shell {
+  background: transparent;
+  color: var(--app-text-primary);
+}
+
+.guide-panel {
+  border: 1px solid var(--app-accent);
+  border-radius: 8px;
+  background: var(--app-guide-bg);
+}
+
+.guide-keycap {
+  border: 1px solid var(--app-border);
+  background: var(--app-guide-key-bg);
+  color: var(--app-accent);
+}
+
+.guide-muted,
+.guide-sequence-separator {
+  color: var(--app-text-muted);
+}
+
+.guide-error {
+  color: var(--settings-error-text);
 }
 
 @media (max-width: 760px) {

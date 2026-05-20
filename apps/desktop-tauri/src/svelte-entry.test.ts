@@ -50,6 +50,10 @@ describe("Svelte frontend entrypoint", () => {
   it("keeps the palette to one hidden results scroller with fixed header and edge fades", () => {
     const appSource = readFileSync(join(srcDir, "App.svelte"), "utf8");
 
+    expect(appSource).toContain("configureRuntimeAppearanceTheme");
+    expect(appSource).toContain("palette-shell");
+    expect(appSource).toContain("palette-surface");
+    expect(appSource).toContain("palette-row-selected");
     expect(appSource).toContain("h-screen overflow-hidden");
     expect(appSource).toContain("palette-results-scroll");
     expect(appSource).toContain("bind:this={resultsScroller}");
@@ -60,9 +64,10 @@ describe("Svelte frontend entrypoint", () => {
     expect(appSource).toContain(".palette-results-scroll::-webkit-scrollbar");
     expect(appSource).toContain("showTopFade");
     expect(appSource).toContain("showBottomFade");
-    expect(appSource).toContain("bg-gradient-to-b");
+    expect(appSource).toContain("palette-top-fade");
     expect(appSource).toContain("pb-14");
-    expect(appSource).toContain("bg-gradient-to-t");
+    expect(appSource).toContain("palette-bottom-fade");
+    expect(appSource).not.toMatch(/(?:bg|text|border)-zinc/);
     expect(appSource).not.toContain("Run selected");
     expect(appSource).not.toContain("Math.max(rows.length - 1, 0)} commands");
     expect(appSource).not.toContain("sticky top-0");
@@ -93,7 +98,10 @@ describe("Svelte frontend entrypoint", () => {
     expect(settingsSource).toContain("settings-row-label");
     expect(settingsSource).toContain("settings-row-control");
     expect(settingsSource).toContain("applySettingsAppearanceTheme");
-    expect(settingsSource).toContain("watchSystemAppearanceTheme");
+    expect(settingsSource).toContain("configureAppearanceTheme");
+    expect(settingsSource).toContain("settings-card");
+    expect(settingsSource).toContain("settings-modal-panel");
+    expect(settingsSource).not.toMatch(/(?:bg|text|border)-(?:zinc|red|emerald|amber)-/);
     expect(settingsSource).not.toContain(
       '<legend class="px-1 text-sm font-medium text-zinc-200">Appearance</legend>',
     );
@@ -150,12 +158,14 @@ describe("Svelte frontend entrypoint", () => {
     }
 
     const guideSource = readFileSync(guidePath, "utf8");
+    expect(guideSource).toContain("configureRuntimeAppearanceTheme");
     expect(guideSource).toContain("flex h-screen overflow-hidden");
-    expect(guideSource).toContain("bg-zinc-950/[0.92]");
+    expect(guideSource).toContain("guide-panel");
     expect(guideSource).not.toContain("shadow-2xl");
     expect(guideSource).toContain("min-h-24 min-w-32");
     expect(guideSource).toContain("px-8 py-6");
     expect(guideSource).toContain("text-2xl");
+    expect(guideSource).not.toMatch(/(?:bg|text|border)-zinc/);
   });
 
   it("declares separate palette, settings, and guide Tauri windows", () => {

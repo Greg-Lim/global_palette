@@ -5,6 +5,7 @@
   import type { GuideEventPayload, GuideStatus } from "./commands";
   import {
     GUIDE_EVENT_NAME,
+    configureRuntimeAppearanceTheme,
     guideShortcutParts,
     nextGuideStatus,
     paletteApi,
@@ -17,6 +18,21 @@
   $: fallbackText = `${guideStatus?.activation_hint ?? "Ctrl+Shift+P"} to run for me`;
 
   onMount(() => {
+    let mounted = true;
+    let stopAppearanceTheme: (() => void) | null = null;
+
+    configureRuntimeAppearanceTheme(paletteApi)
+      .then((cleanup) => {
+        if (mounted) {
+          stopAppearanceTheme = cleanup;
+        } else {
+          cleanup();
+        }
+      })
+      .catch((caught: unknown) => {
+        console.warn("Failed to apply appearance theme", caught);
+      });
+
     paletteApi
       .getGuideStatus()
       .then((status) => {
@@ -38,6 +54,8 @@
       });
 
     return () => {
+      mounted = false;
+      stopAppearanceTheme?.();
       unlistenGuideEvents?.();
     };
   });
@@ -67,10 +85,10 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<main class="flex h-screen overflow-hidden items-center justify-center bg-transparent p-4 text-zinc-100">
-  <section class="w-full rounded-lg border border-amber-500/60 bg-zinc-950/[0.92] px-6 py-5">
+<main class="guide-shell flex h-screen overflow-hidden items-center justify-center p-4">
+  <section class="guide-panel w-full px-6 py-5">
     {#if error}
-      <p class="text-sm text-red-300">{error}</p>
+      <p class="guide-error text-sm">{error}</p>
     {:else if guideStatus?.active}
       <p class="text-sm font-semibold">{guideStatus.command_label}</p>
 
@@ -78,11 +96,11 @@
         <div class="mt-4 flex flex-wrap items-center gap-3">
           {#each shortcutParts as chord, chordIndex}
             {#if chordIndex > 0}
-              <span class="text-xs text-zinc-500">then</span>
+              <span class="guide-sequence-separator text-xs">then</span>
             {/if}
             <span class="flex items-center gap-2">
               {#each chord as key}
-                <kbd class="min-h-24 min-w-32 rounded-md border border-zinc-600 bg-zinc-900 px-8 py-6 text-center text-2xl font-semibold text-amber-200">
+                <kbd class="guide-keycap min-h-24 min-w-32 rounded-md px-8 py-6 text-center text-2xl font-semibold">
                   {key}
                 </kbd>
               {/each}
@@ -91,9 +109,9 @@
         </div>
       {/if}
 
-      <p class="mt-4 text-xs text-zinc-400">{fallbackText}</p>
+      <p class="guide-muted mt-4 text-xs">{fallbackText}</p>
     {:else}
-      <p class="text-sm text-zinc-400">Guide idle</p>
+      <p class="guide-muted text-sm">Guide idle</p>
     {/if}
   </section>
 </main>

@@ -50,6 +50,8 @@ import {
   runtimeSettingsSaveRequestFromDraft,
   applyRuntimeSettingsSaveResult,
   applyAppearanceTheme,
+  configureAppearanceTheme,
+  configureRuntimeAppearanceTheme,
   discardRuntimeSettingsDraft,
   isOpenSettingsCommand,
   isRefreshExtensionsCommand,
@@ -1297,6 +1299,54 @@ describe("runtime settings helpers", () => {
       applyCount += 1;
     }, matchMedia);
     expect(calls).toHaveLength(1);
+  });
+
+  it("configures the active document theme and reapplies system changes", () => {
+    const root = { dataset: {} as Record<string, string> };
+    const listeners: Array<() => void> = [];
+    const removed: Array<() => void> = [];
+    let systemDark = false;
+    const mediaQuery = {
+      get matches() {
+        return systemDark;
+      },
+      addEventListener: (_event: "change", listener: () => void) => listeners.push(listener),
+      removeEventListener: (_event: "change", listener: () => void) => removed.push(listener),
+    } as MediaQueryList;
+    const matchMedia = () => mediaQuery;
+
+    const cleanup = configureAppearanceTheme("system", { root, matchMedia });
+
+    expect(root.dataset.theme).toBe("light");
+    systemDark = true;
+    listeners[0]();
+    expect(root.dataset.theme).toBe("dark");
+    cleanup();
+    expect(removed).toEqual(listeners);
+  });
+
+  it("loads the saved appearance theme before configuring a Tauri webview", async () => {
+    const root = { dataset: {} as Record<string, string> };
+    const calls: string[] = [];
+    const cleanup = await configureRuntimeAppearanceTheme(
+      {
+        getSettingsBootstrap: async () => {
+          calls.push("bootstrap");
+          return {
+            config: { ...runtimeSettings, appearance_theme: "light" },
+            default_activation_shortcut: defaultActivationShortcut,
+            config_path: runtimeStatus.config_path,
+            config_error: null,
+            runtime_status: runtimeStatus,
+          };
+        },
+      },
+      { root },
+    );
+
+    expect(calls).toEqual(["bootstrap"]);
+    expect(root.dataset.theme).toBe("light");
+    cleanup();
   });
 
   it("detects dirty editable settings including activation shortcut changes", () => {

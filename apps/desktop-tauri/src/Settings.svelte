@@ -16,11 +16,11 @@
   import {
     addExtensionSettingListEntry,
     activationShortcutFromKeyboardEvent,
-    applyAppearanceTheme,
     applyCatalogRefreshResult,
     applyExtensionMutationResult,
     applyExtensionSettingsSaveResult,
     applyRuntimeSettingsSaveResult,
+    configureAppearanceTheme,
     copyExtensionSettingsValues,
     defaultExtensionSettingsValues,
     discardRuntimeSettingsDraft,
@@ -35,7 +35,6 @@
     runtimeSettingsSaveRequestFromDraft,
     updateExtensionSettingListEntry,
     updateExtensionSettingToggle,
-    watchSystemAppearanceTheme,
   } from "./commands";
 
   type SettingsPage = "general" | "extensions" | "marketplace";
@@ -91,11 +90,8 @@
   });
 
   function applySettingsAppearanceTheme(theme: RuntimeSettings["appearance_theme"]) {
-    applyAppearanceTheme(theme);
     stopSystemAppearanceWatcher?.();
-    stopSystemAppearanceWatcher = watchSystemAppearanceTheme(theme, () => {
-      applyAppearanceTheme(theme);
-    });
+    stopSystemAppearanceWatcher = configureAppearanceTheme(theme);
   }
 
   function loadSettingsBootstrap() {
@@ -624,23 +620,21 @@
   function extensionStatusPillClass(extension: ExtensionRow): string {
     return [
       "extension-status-pill rounded border px-3 py-1 text-xs font-medium",
-      extension.enabled
-        ? "border-emerald-800 bg-emerald-950 text-emerald-200"
-        : "border-zinc-700 bg-zinc-900 text-zinc-300",
+      extension.enabled ? "settings-status-pill-enabled" : "settings-status-pill-disabled",
     ].join(" ");
   }
 
   function extensionToggleTrackClass(extension: ExtensionRow, disabled: boolean): string {
     return [
       "extension-toggle-switch relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition",
-      extension.enabled ? "border-amber-400 bg-amber-400" : "border-zinc-700 bg-zinc-950",
+      extension.enabled ? "settings-toggle-track-on" : "settings-toggle-track-off",
       disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
     ].join(" ");
   }
 
   function extensionToggleThumbClass(extension: ExtensionRow): string {
     return [
-      "inline-block h-4 w-4 rounded-full bg-white shadow transition",
+      "settings-toggle-thumb inline-block h-4 w-4 rounded-full shadow transition",
       extension.enabled ? "translate-x-4" : "translate-x-0.5",
     ].join(" ");
   }
@@ -686,11 +680,11 @@
 
 <svelte:window onkeydown={handleActivationShortcutKeydown} />
 
-<main class="min-h-screen bg-[var(--settings-bg)] text-[var(--settings-text-primary)]">
+<main class="settings-shell">
   <section class="flex min-h-screen">
-    <aside class="w-56 border-r border-[var(--settings-border-soft)] bg-[var(--settings-sidebar-bg)] p-4">
+    <aside class="settings-sidebar w-56 p-4">
       <h1 class="text-lg font-semibold">Omni Palette</h1>
-      <p class="text-sm text-[var(--settings-text-muted)]">Preferences</p>
+      <p class="settings-muted text-sm">Preferences</p>
       <nav class="mt-6 grid gap-2">
         <button
           class={[
@@ -703,7 +697,7 @@
           type="button"
         >
           <span class="block font-medium">General</span>
-          <span class="block text-xs text-zinc-500">Shortcut and config</span>
+          <span class="settings-nav-description block text-xs">Shortcut and config</span>
         </button>
         <button
           class={[
@@ -716,7 +710,7 @@
           type="button"
         >
           <span class="block font-medium">Manage Extensions</span>
-          <span class="block text-xs text-zinc-500">Enable and remove</span>
+          <span class="settings-nav-description block text-xs">Enable and remove</span>
         </button>
         <button
           class={[
@@ -729,7 +723,7 @@
           type="button"
         >
           <span class="block font-medium">Marketplace</span>
-          <span class="block text-xs text-zinc-500">Browse and install</span>
+          <span class="settings-nav-description block text-xs">Browse and install</span>
         </button>
       </nav>
     </aside>
@@ -765,22 +759,20 @@
       </header>
 
       {#if settingsConfigError}
-        <p class="mb-4 rounded border border-red-800 bg-red-950 px-3 py-2 text-sm text-red-200">
+        <p class="settings-error-message mb-4 px-3 py-2 text-sm">
           {settingsConfigError}
         </p>
       {/if}
       {#if extensionsBootstrap?.install_root_error}
-        <p class="mb-4 rounded border border-red-800 bg-red-950 px-3 py-2 text-sm text-red-200">
+        <p class="settings-error-message mb-4 px-3 py-2 text-sm">
           {extensionsBootstrap.install_root_error}
         </p>
       {/if}
       {#if settingsMessage}
         <p
           class={[
-            "mb-4 rounded border px-3 py-2 text-sm",
-            settingsFailed
-              ? "border-red-800 bg-red-950 text-red-200"
-              : "border-[var(--settings-success-border)] bg-[var(--settings-success-bg)] text-[var(--settings-success-text)]",
+            "mb-4 px-3 py-2 text-sm",
+            settingsFailed ? "settings-error-message" : "settings-success-message",
           ].join(" ")}
         >
           {settingsMessage}
@@ -788,7 +780,7 @@
       {/if}
 
       {#if settingsLoading || !settingsDraft}
-        <div class="rounded border border-[var(--settings-border-soft)] bg-[var(--settings-surface)] p-6 text-sm text-[var(--settings-text-muted)]">
+        <div class="settings-card settings-muted p-6 text-sm">
           Loading settings...
         </div>
       {:else}
@@ -949,26 +941,26 @@
           </div>
         {:else if activeSettingsPage === "extensions"}
           {#if extensionsLoading || !extensionsBootstrap}
-            <div class="rounded border border-zinc-800 bg-zinc-900 p-6 text-sm text-zinc-400">
+            <div class="settings-card settings-muted p-6 text-sm">
               Loading extensions...
             </div>
           {:else}
             <div class="space-y-6">
-              <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
+              <section class="settings-card p-4">
                 <h3 class="text-lg font-medium">Bundled Defaults</h3>
-                <p class="text-sm text-zinc-400">
+                <p class="settings-muted text-sm">
                   Built into Omni Palette. They can be disabled, but not uninstalled.
                 </p>
                 <div class="mt-4 grid gap-3">
                   {#each extensionsBootstrap.bundled_extensions as extension}
-                    <article class="rounded border border-zinc-800 bg-zinc-950 p-4">
+                    <article class="settings-subcard p-4">
                       <div class="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <h4 class="font-medium">
                             {extension.name}
-                            <span class="text-xs text-zinc-500">{extension.version}</span>
+                            <span class="settings-muted text-xs">{extension.version}</span>
                           </h4>
-                          <div class="mt-1 flex flex-wrap gap-2 text-xs text-zinc-400">
+                          <div class="settings-muted mt-1 flex flex-wrap gap-2 text-xs">
                             <span>Bundled</span>
                             <span>{extensionKindLabel(extension)}</span>
                           </div>
@@ -999,7 +991,7 @@
                           </label>
                           {#if extension.has_settings}
                             <button
-                              class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+                              class="settings-button"
                               disabled={extensionSettingsLoadingKey === extensionKey(extension)}
                               onclick={() => openExtensionSettings(extension)}
                               type="button"
@@ -1016,24 +1008,24 @@
                 </div>
               </section>
 
-              <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
+              <section class="settings-card p-4">
                 <h3 class="text-lg font-medium">Downloaded Extensions</h3>
-                <p class="text-sm text-zinc-400">Installed from your configured catalog.</p>
+                <p class="settings-muted text-sm">Installed from your configured catalog.</p>
                 {#if extensionsBootstrap.downloaded_extensions.length === 0}
-                  <p class="mt-4 rounded border border-zinc-800 bg-zinc-950 px-3 py-4 text-sm text-zinc-400">
+                  <p class="settings-empty mt-4 px-3 py-4 text-sm">
                     No downloaded extensions installed yet.
                   </p>
                 {:else}
                   <div class="mt-4 grid gap-3">
                     {#each extensionsBootstrap.downloaded_extensions as extension}
-                      <article class="rounded border border-zinc-800 bg-zinc-950 p-4">
+                      <article class="settings-subcard p-4">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <h4 class="font-medium">
                               {extension.name}
-                              <span class="text-xs text-zinc-500">{extension.version}</span>
+                              <span class="settings-muted text-xs">{extension.version}</span>
                             </h4>
-                            <div class="mt-1 flex flex-wrap gap-2 text-xs text-zinc-400">
+                            <div class="settings-muted mt-1 flex flex-wrap gap-2 text-xs">
                               <span>Downloaded</span>
                               <span>{extensionKindLabel(extension)}</span>
                             </div>
@@ -1064,7 +1056,7 @@
                             </label>
                             {#if extension.has_settings}
                               <button
-                                class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+                                class="settings-button"
                                 disabled={extensionSettingsLoadingKey === extensionKey(extension)}
                                 onclick={() => openExtensionSettings(extension)}
                                 type="button"
@@ -1075,7 +1067,7 @@
                               </button>
                             {/if}
                             <button
-                              class="rounded border border-red-800 px-3 py-2 text-sm text-red-200 disabled:text-zinc-600"
+                              class="settings-danger-button"
                               disabled={extensionMutationKey === extensionKey(extension)}
                               onclick={() => uninstallExtension(extension)}
                               type="button"
@@ -1093,46 +1085,46 @@
           {/if}
         {:else}
           <div class="space-y-6">
-            <fieldset class="rounded border border-zinc-800 bg-zinc-900 p-4">
-              <legend class="px-1 text-sm font-medium text-zinc-200">Catalog source</legend>
-              <label class="flex items-center gap-3 text-sm text-zinc-300">
+            <fieldset class="settings-card p-4">
+              <legend class="settings-section-heading px-1 text-sm font-medium">Catalog source</legend>
+              <label class="settings-label flex items-center gap-3 text-sm">
                 <input
                   checked={settingsDraft.github.enabled}
-                  class="h-4 w-4 rounded border-zinc-700 bg-zinc-950"
+                  class="settings-checkbox h-4 w-4 rounded"
                   onchange={(event) => updateCatalogEnabled(checkedValue(event))}
                   type="checkbox"
                 />
                 Enable GitHub catalog source
               </label>
               <div class="mt-4 grid gap-3 sm:grid-cols-2">
-                <label class="grid gap-1 text-sm text-zinc-300">
+                <label class="settings-label grid gap-1 text-sm">
                   Owner
                   <input
-                    class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-amber-500"
+                    class="settings-input px-3 py-2"
                     value={settingsDraft.github.owner}
                     oninput={(event) => updateCatalogText("owner", inputValue(event))}
                   />
                 </label>
-                <label class="grid gap-1 text-sm text-zinc-300">
+                <label class="settings-label grid gap-1 text-sm">
                   Repo
                   <input
-                    class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-amber-500"
+                    class="settings-input px-3 py-2"
                     value={settingsDraft.github.repo}
                     oninput={(event) => updateCatalogText("repo", inputValue(event))}
                   />
                 </label>
-                <label class="grid gap-1 text-sm text-zinc-300">
+                <label class="settings-label grid gap-1 text-sm">
                   Branch
                   <input
-                    class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-amber-500"
+                    class="settings-input px-3 py-2"
                     value={settingsDraft.github.branch}
                     oninput={(event) => updateCatalogText("branch", inputValue(event))}
                   />
                 </label>
-                <label class="grid gap-1 text-sm text-zinc-300">
+                <label class="settings-label grid gap-1 text-sm">
                   Catalog path
                   <input
-                    class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-amber-500"
+                    class="settings-input px-3 py-2"
                     value={settingsDraft.github.catalog_path}
                     oninput={(event) => updateCatalogText("catalog_path", inputValue(event))}
                   />
@@ -1140,7 +1132,7 @@
               </div>
               <div class="mt-4 flex flex-wrap gap-2">
                 <button
-                  class="rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:bg-zinc-700 disabled:text-zinc-400"
+                  class="settings-primary-button"
                   disabled={!settingsDirty || settingsSaving}
                   onclick={saveRuntimeSettings}
                   type="button"
@@ -1148,7 +1140,7 @@
                   {settingsSaving ? "Saving..." : "Save Source"}
                 </button>
                 <button
-                  class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+                  class="settings-button"
                   disabled={!settingsDraft.github.enabled || catalogRefreshing}
                   onclick={refreshExtensionCatalog}
                   type="button"
@@ -1156,7 +1148,7 @@
                   {catalogRefreshing ? "Refreshing..." : "Refresh Catalog"}
                 </button>
                 <button
-                  class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+                  class="settings-button"
                   disabled={settingsReloading}
                   onclick={reloadRuntimeState}
                   type="button"
@@ -1166,41 +1158,41 @@
               </div>
             </fieldset>
 
-            <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
+            <section class="settings-card p-4">
               <h3 class="text-lg font-medium">Available Extensions</h3>
-              <p class="text-sm text-zinc-400">
+              <p class="settings-muted text-sm">
                 Search the refreshed catalog for extensions that support this Windows build.
               </p>
               <input
-                class="mt-4 w-full max-w-lg rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-amber-500"
+                class="settings-input mt-4 w-full max-w-lg px-3 py-2"
                 placeholder="Search catalog"
                 value={catalogQuery}
                 oninput={(event) => (catalogQuery = inputValue(event))}
               />
 
               {#if catalogEntries.length === 0}
-                <p class="mt-4 rounded border border-zinc-800 bg-zinc-950 px-3 py-4 text-sm text-zinc-400">
+                <p class="settings-empty mt-4 px-3 py-4 text-sm">
                   Refresh the catalog to browse available extensions.
                 </p>
               {:else if visibleCatalogEntries.length === 0}
-                <p class="mt-4 rounded border border-zinc-800 bg-zinc-950 px-3 py-4 text-sm text-zinc-400">
+                <p class="settings-empty mt-4 px-3 py-4 text-sm">
                   No catalog extensions match your search.
                 </p>
               {:else}
                 <div class="mt-4 grid gap-3">
                   {#each visibleCatalogEntries as entry}
-                    <article class="rounded border border-zinc-800 bg-zinc-950 p-4">
+                    <article class="settings-subcard p-4">
                       <div class="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <h4 class="font-medium">
                             {entry.name}
-                            <span class="text-xs text-zinc-500">{entry.version}</span>
+                            <span class="settings-muted text-xs">{entry.version}</span>
                           </h4>
                           {#if entry.description}
-                            <p class="mt-1 text-sm text-zinc-400">{entry.description}</p>
+                            <p class="settings-muted mt-1 text-sm">{entry.description}</p>
                           {/if}
                           {#if catalogStatusLabel(entry)}
-                            <p class="mt-1 text-xs text-amber-300">
+                            <p class="mt-1 text-xs text-[var(--settings-accent)]">
                               {catalogStatusLabel(entry)}
                             </p>
                           {/if}
@@ -1208,7 +1200,7 @@
                         <div class="flex flex-wrap items-center gap-2">
                           {#if entry.kind === "static"}
                             <button
-                              class="rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:bg-zinc-700 disabled:text-zinc-400"
+                              class="settings-primary-button"
                               disabled={catalogInstallingId === entry.id}
                               onclick={() => installCatalogExtension(entry)}
                               type="button"
@@ -1218,7 +1210,7 @@
                                 : catalogActionLabel(entry)}
                             </button>
                           {:else}
-                            <span class="text-sm text-zinc-500">Unavailable</span>
+                            <span class="settings-muted text-sm">Unavailable</span>
                           {/if}
                         </div>
                       </div>
@@ -1260,19 +1252,19 @@
   </section>
 
   {#if extensionSettingsPanel}
-    <section class="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-6">
-      <div class="max-h-full w-full max-w-3xl overflow-auto rounded border border-zinc-800 bg-zinc-950 p-5 shadow-xl">
+    <section class="settings-modal-backdrop fixed inset-0 z-10 flex items-center justify-center p-6">
+      <div class="settings-modal-panel max-h-full w-full max-w-3xl overflow-auto p-5">
         <header class="flex items-start justify-between gap-4">
           <div>
             <h2 class="text-xl font-semibold">
               {extensionSettingsPanel.target.display_name} Settings
             </h2>
-            <p class="mt-1 text-sm text-zinc-400">
+            <p class="settings-muted mt-1 text-sm">
               These settings affect only this extension and are saved in your user extension folder.
             </p>
           </div>
           <button
-            class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+            class="settings-button"
             disabled={extensionSettingsPanel.saving}
             onclick={closeExtensionSettingsPanel}
             type="button"
@@ -1284,10 +1276,10 @@
         {#if extensionSettingsPanel.message}
           <p
             class={[
-              "mt-4 rounded border px-3 py-2 text-sm",
+              "mt-4 px-3 py-2 text-sm",
               extensionSettingsPanel.failed
-                ? "border-red-800 bg-red-950 text-red-200"
-                : "border-emerald-800 bg-emerald-950 text-emerald-200",
+                ? "settings-error-message"
+                : "settings-success-message",
             ].join(" ")}
           >
             {extensionSettingsPanel.message}
@@ -1295,23 +1287,24 @@
         {/if}
 
         {#if extensionSettingsPanel.schema.items.length === 0}
-          <p class="mt-4 rounded border border-zinc-800 bg-zinc-900 px-3 py-4 text-sm text-zinc-400">
+          <p class="settings-empty mt-4 px-3 py-4 text-sm">
             No custom settings are currently available for this extension.
           </p>
         {:else}
           <div class="mt-4 grid gap-4">
             {#each extensionSettingsPanelSections as section}
-              <section class="rounded border border-zinc-800 bg-zinc-900 p-4">
+              <section class="settings-card p-4">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 class="font-medium">{section.category.label}</h3>
                     {#if section.category.description}
-                      <p class="mt-1 text-sm text-zinc-400">{section.category.description}</p>
+                      <p class="settings-muted mt-1 text-sm">{section.category.description}</p>
                     {/if}
                   </div>
                   {#each categoryToggleItems(section) as toggleItem}
-                    <label class="flex items-center gap-2 text-sm text-zinc-300">
+                    <label class="settings-label flex items-center gap-2 text-sm">
                       <input
+                        class="settings-checkbox"
                         checked={extensionSettingToggleValue(extensionSettingsPanel.draft, toggleItem)}
                         onchange={(event) =>
                           setExtensionSettingToggle(toggleItem.key, checkedValue(event))}
@@ -1325,14 +1318,15 @@
                 <div class="mt-4 grid gap-3">
                   {#each visibleSectionItems(section) as item}
                     {#if item.kind === "toggle"}
-                      <label class="flex items-start justify-between gap-3 rounded border border-zinc-800 bg-zinc-950 p-3 text-sm">
+                      <label class="settings-subcard flex items-start justify-between gap-3 p-3 text-sm">
                         <span>
-                          <span class="block text-zinc-100">{item.label}</span>
+                          <span class="settings-label block">{item.label}</span>
                           {#if item.description}
-                            <span class="mt-1 block text-zinc-400">{item.description}</span>
+                            <span class="settings-muted mt-1 block">{item.description}</span>
                           {/if}
                         </span>
                         <input
+                          class="settings-checkbox"
                           checked={extensionSettingToggleValue(extensionSettingsPanel.draft, item)}
                           onchange={(event) =>
                             setExtensionSettingToggle(item.key, checkedValue(event))}
@@ -1340,16 +1334,16 @@
                         />
                       </label>
                     {:else}
-                      <div class="rounded border border-zinc-800 bg-zinc-950 p-3">
+                      <div class="settings-subcard p-3">
                         <div class="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <h4 class="text-sm font-medium">{item.label}</h4>
                             {#if item.description}
-                              <p class="mt-1 text-sm text-zinc-400">{item.description}</p>
+                              <p class="settings-muted mt-1 text-sm">{item.description}</p>
                             {/if}
                           </div>
                           <button
-                            class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100"
+                            class="settings-button"
                             onclick={() => addExtensionSettingEntry(item)}
                             type="button"
                           >
@@ -1359,9 +1353,10 @@
 
                         <div class="mt-3 grid gap-2">
                           {#each extensionSettingListValue(extensionSettingsPanel.draft, item) as entry, index (entry.id)}
-                            <div class="grid gap-2 rounded border border-zinc-800 bg-zinc-900 p-3 md:grid-cols-[auto_1fr_1fr_auto]">
-                              <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <div class="settings-card grid gap-2 p-3 md:grid-cols-[auto_1fr_1fr_auto]">
+                              <label class="settings-label flex items-center gap-2 text-sm">
                                 <input
+                                  class="settings-checkbox"
                                   checked={entry.enabled}
                                   onchange={(event) =>
                                     updateExtensionSettingEntry(item.key, index, {
@@ -1372,7 +1367,7 @@
                                 Enabled
                               </label>
                               <input
-                                class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-amber-500"
+                                class="settings-input px-3 py-2 text-sm"
                                 placeholder="Name"
                                 value={entry.name}
                                 oninput={(event) =>
@@ -1381,7 +1376,7 @@
                                   })}
                               />
                               <input
-                                class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-amber-500"
+                                class="settings-input px-3 py-2 text-sm"
                                 placeholder={item.entry_list_format_hint ?? "Format"}
                                 value={entry.format}
                                 oninput={(event) =>
@@ -1390,7 +1385,7 @@
                                   })}
                               />
                               <button
-                                class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100"
+                                class="settings-button"
                                 onclick={() => removeExtensionSettingEntry(item.key, index)}
                                 type="button"
                               >
@@ -1408,13 +1403,13 @@
           </div>
         {/if}
 
-        <footer class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
-          <span class="text-sm text-zinc-400">
+        <footer class="settings-modal-footer mt-5 flex flex-wrap items-center justify-between gap-3 pt-4">
+          <span class="settings-muted text-sm">
             {extensionSettingsDirty ? "Unsaved extension settings" : "Extension settings are current"}
           </span>
           <div class="flex flex-wrap gap-2">
             <button
-              class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100 disabled:text-zinc-600"
+              class="settings-button"
               disabled={extensionSettingsPanel.saving}
               onclick={resetExtensionSettingsDefaults}
               type="button"
@@ -1422,7 +1417,7 @@
               Reset Defaults
             </button>
             <button
-              class="rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white disabled:bg-zinc-700 disabled:text-zinc-400"
+              class="settings-primary-button"
               disabled={!extensionSettingsDirty || extensionSettingsPanel.saving}
               onclick={saveExtensionSettingsPanel}
               type="button"
