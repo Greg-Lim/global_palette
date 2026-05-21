@@ -184,6 +184,10 @@ describe("Svelte frontend entrypoint", () => {
     expect(debugSource).toContain("Interaction");
     expect(debugSource).toContain("Command Candidates");
     expect(debugSource).toContain("Palette Filter");
+    expect(debugSource).toContain("debug-disclosure-caret");
+    expect(debugSource).toContain('aria-hidden="true"');
+    expect(debugSource).toContain('paletteRowsOpen ? "rotate-180" : ""');
+    expect(debugSource).toContain('backgroundWindowsOpen ? "rotate-180" : ""');
     expect(debugSource).toContain("aria-expanded={paletteRowsOpen}");
     expect(debugSource).toContain("Score breakdown");
     expect(debugSource).toContain("score_breakdown");

@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import type { DebugCommandRow, DebugOverlayStatus, DebugSnapshot } from "./commands";
+  import type {
+    DebugCommandRow,
+    DebugOverlayStatus,
+    DebugSnapshot,
+  } from "./commands";
   import { formatDebugOverlayStatus, paletteApi } from "./commands";
 
   const DEBUG_SNAPSHOT_REFRESH_MS = 1000;
@@ -17,7 +21,10 @@
 
   onMount(() => {
     refreshDebugSnapshot();
-    const interval = window.setInterval(refreshDebugSnapshot, DEBUG_SNAPSHOT_REFRESH_MS);
+    const interval = window.setInterval(
+      refreshDebugSnapshot,
+      DEBUG_SNAPSHOT_REFRESH_MS,
+    );
 
     return () => window.clearInterval(interval);
   });
@@ -28,7 +35,10 @@
     }
 
     refreshInFlight = true;
-    Promise.all([paletteApi.getDebugOverlayStatus(), paletteApi.getDebugSnapshot()])
+    Promise.all([
+      paletteApi.getDebugOverlayStatus(),
+      paletteApi.getDebugSnapshot(),
+    ])
       .then(([nextStatus, nextSnapshot]) => {
         status = nextStatus;
         snapshot = nextSnapshot;
@@ -44,7 +54,9 @@
       });
   }
 
-  function windowLabel(window: { process_name: string | null; hwnd: number | null } | null) {
+  function windowLabel(
+    window: { process_name: string | null; hwnd: number | null } | null,
+  ) {
     if (!window) {
       return "None";
     }
@@ -79,7 +91,9 @@
     <div>
       <h1 class="text-lg font-semibold">Debug Overlay</h1>
       {#if status}
-        <p class="mt-1 text-sm text-zinc-400">{formatDebugOverlayStatus(status)}</p>
+        <p class="mt-1 text-sm text-zinc-400">
+          {formatDebugOverlayStatus(status)}
+        </p>
       {/if}
     </div>
   </header>
@@ -101,7 +115,9 @@
     <div class="mt-4 grid gap-4">
       <section class="rounded border border-zinc-800 bg-zinc-900 p-3">
         <h2 class="font-medium">Foreground</h2>
-        <p class="mt-2 text-sm text-zinc-300">{windowLabel(snapshot.foreground_window)}</p>
+        <p class="mt-2 text-sm text-zinc-300">
+          {windowLabel(snapshot.foreground_window)}
+        </p>
         <p class="mt-1 text-sm text-zinc-400">
           Ignored: {snapshot.ignored_process_name ?? "No"}
         </p>
@@ -113,7 +129,9 @@
           Text input: {snapshot.text_input_active ? "active" : "inactive"}
         </p>
         <p class="mt-1 text-sm text-zinc-400">
-          Tags: {snapshot.active_tags.length > 0 ? snapshot.active_tags.join(", ") : "None"}
+          Tags: {snapshot.active_tags.length > 0
+            ? snapshot.active_tags.join(", ")
+            : "None"}
         </p>
       </section>
 
@@ -128,7 +146,8 @@
           <span>High: {snapshot.command_summary.high_priority}</span>
           <span>Medium: {snapshot.command_summary.medium_priority}</span>
           <span>Low: {snapshot.command_summary.low_priority}</span>
-          <span>Suppressed: {snapshot.command_summary.suppressed_priority}</span>
+          <span>Suppressed: {snapshot.command_summary.suppressed_priority}</span
+          >
         </div>
       </section>
 
@@ -136,11 +155,18 @@
         <div class="flex items-center justify-between gap-3">
           <button
             type="button"
-            class="text-left font-medium text-zinc-100"
+            class="flex items-center gap-2 text-left font-medium text-zinc-100"
             aria-expanded={paletteRowsOpen}
             onclick={() => (paletteRowsOpen = !paletteRowsOpen)}
           >
-            Palette Filter
+            <span>Palette Filter</span>
+            <span
+              aria-hidden="true"
+              class={[
+                "debug-disclosure-caret h-0 w-0 border-x-4 border-t-4 border-x-transparent border-t-zinc-400 transition-transform",
+                paletteRowsOpen ? "rotate-180" : "",
+              ].join(" ")}
+            ></span>
           </button>
           <label class="flex items-center gap-2 text-xs text-zinc-400">
             <input
@@ -159,11 +185,15 @@
         </p>
         {#if paletteRowsOpen}
           {#if snapshot.palette_state.top_rows.length === 0}
-            <p class="mt-3 text-sm text-zinc-500">No palette rows recorded yet.</p>
+            <p class="mt-3 text-sm text-zinc-500">
+              No palette rows recorded yet.
+            </p>
           {:else}
             <div class="mt-3 grid gap-2">
               {#each snapshot.palette_state.top_rows as row}
-                <article class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
+                <article
+                  class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm"
+                >
                   <div class="font-medium">{row.label}</div>
                   <div class="mt-1 text-xs text-zinc-400">
                     {row.focus_state} - {row.priority} - score {row.score}
@@ -187,22 +217,33 @@
       <section class="rounded border border-zinc-800 bg-zinc-900 p-3">
         <button
           type="button"
-          class="text-left font-medium text-zinc-100"
+          class="flex items-center gap-2 text-left font-medium text-zinc-100"
           aria-expanded={backgroundWindowsOpen}
           onclick={() => (backgroundWindowsOpen = !backgroundWindowsOpen)}
         >
-          Background Windows
+          <span>Background Windows</span>
+          <span
+            aria-hidden="true"
+            class={[
+              "debug-disclosure-caret h-0 w-0 border-x-4 border-t-4 border-x-transparent border-t-zinc-400 transition-transform",
+              backgroundWindowsOpen ? "rotate-180" : "",
+            ].join(" ")}
+          ></span>
         </button>
         <p class="mt-2 text-sm text-zinc-400">
           Showing {snapshot.background_windows.length} of {snapshot.background_total}
         </p>
         {#if backgroundWindowsOpen}
           {#if snapshot.background_windows.length === 0}
-            <p class="mt-3 text-sm text-zinc-500">No background windows found.</p>
+            <p class="mt-3 text-sm text-zinc-500">
+              No background windows found.
+            </p>
           {:else}
             <div class="mt-3 grid gap-2">
               {#each snapshot.background_windows as window}
-                <div class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
+                <div
+                  class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm"
+                >
                   {windowLabel(window)}
                 </div>
               {/each}
