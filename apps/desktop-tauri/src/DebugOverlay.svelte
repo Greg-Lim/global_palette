@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import type { DebugOverlayStatus, DebugSnapshot } from "./commands";
+  import type { DebugCommandRow, DebugOverlayStatus, DebugSnapshot } from "./commands";
   import { formatDebugOverlayStatus, paletteApi } from "./commands";
 
   const DEBUG_SNAPSHOT_REFRESH_MS = 1000;
@@ -11,6 +11,9 @@
   let message: string | null = null;
   let failed = false;
   let refreshInFlight = false;
+  let paletteRowsOpen = true;
+  let backgroundWindowsOpen = true;
+  let showScoreBreakdown = false;
 
   onMount(() => {
     refreshDebugSnapshot();
@@ -46,6 +49,24 @@
       return "None";
     }
     return `${window.process_name ?? "Unknown process"} (${window.hwnd ?? "no hwnd"})`;
+  }
+
+  function scoreBreakdownComponentText(row: DebugCommandRow) {
+    const breakdown = row.score_breakdown;
+    if (!breakdown) {
+      return "";
+    }
+
+    return `label ${breakdown.label_score ?? 0} + tag ${breakdown.tag_contribution} + initials ${breakdown.word_initial_bonus} = raw ${breakdown.raw_score}`;
+  }
+
+  function scoreBreakdownEquationText(row: DebugCommandRow) {
+    const breakdown = row.score_breakdown;
+    if (!breakdown) {
+      return "";
+    }
+
+    return `${breakdown.raw_score} x ${breakdown.focus_multiplier_percent}% focus x ${breakdown.priority_multiplier_percent}% priority x ${breakdown.favorite_multiplier_percent}% favorite + ${breakdown.priority_bonus} + ${breakdown.favorite_bonus} = ${breakdown.adjusted_score}`;
   }
 
   function errorMessage(error: unknown): string {
@@ -112,44 +133,81 @@
       </section>
 
       <section class="rounded border border-zinc-800 bg-zinc-900 p-3">
-        <h2 class="font-medium">Palette Filter</h2>
+        <div class="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            class="text-left font-medium text-zinc-100"
+            aria-expanded={paletteRowsOpen}
+            onclick={() => (paletteRowsOpen = !paletteRowsOpen)}
+          >
+            Palette Filter
+          </button>
+          <label class="flex items-center gap-2 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              class="h-3 w-3 rounded border-zinc-700 bg-zinc-950"
+              bind:checked={showScoreBreakdown}
+            />
+            <span>Score breakdown</span>
+          </label>
+        </div>
         <p class="mt-2 text-sm text-zinc-300">
           Query: {snapshot.palette_state.query || "(empty)"}
         </p>
         <p class="mt-1 text-sm text-zinc-400">
           Filtered rows: {snapshot.palette_state.filtered_count}
         </p>
-        {#if snapshot.palette_state.top_rows.length === 0}
-          <p class="mt-3 text-sm text-zinc-500">No palette rows recorded yet.</p>
-        {:else}
-          <div class="mt-3 grid gap-2">
-            {#each snapshot.palette_state.top_rows as row}
-              <article class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
-                <div class="font-medium">{row.label}</div>
-                <div class="mt-1 text-xs text-zinc-400">
-                  {row.focus_state} - {row.priority} - score {row.score}
-                </div>
-              </article>
-            {/each}
-          </div>
+        {#if paletteRowsOpen}
+          {#if snapshot.palette_state.top_rows.length === 0}
+            <p class="mt-3 text-sm text-zinc-500">No palette rows recorded yet.</p>
+          {:else}
+            <div class="mt-3 grid gap-2">
+              {#each snapshot.palette_state.top_rows as row}
+                <article class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
+                  <div class="font-medium">{row.label}</div>
+                  <div class="mt-1 text-xs text-zinc-400">
+                    {row.focus_state} - {row.priority} - score {row.score}
+                  </div>
+                  {#if showScoreBreakdown && row.score_breakdown}
+                    <div class="mt-2 grid gap-1 text-xs text-zinc-500">
+                      <div>{scoreBreakdownComponentText(row)}</div>
+                      <div>{scoreBreakdownEquationText(row)}</div>
+                      {#if row.score_breakdown.suppressed_bucket}
+                        <div>suppressed bucket: bottom</div>
+                      {/if}
+                    </div>
+                  {/if}
+                </article>
+              {/each}
+            </div>
+          {/if}
         {/if}
       </section>
 
       <section class="rounded border border-zinc-800 bg-zinc-900 p-3">
-        <h2 class="font-medium">Background Windows</h2>
+        <button
+          type="button"
+          class="text-left font-medium text-zinc-100"
+          aria-expanded={backgroundWindowsOpen}
+          onclick={() => (backgroundWindowsOpen = !backgroundWindowsOpen)}
+        >
+          Background Windows
+        </button>
         <p class="mt-2 text-sm text-zinc-400">
           Showing {snapshot.background_windows.length} of {snapshot.background_total}
         </p>
-        {#if snapshot.background_windows.length === 0}
-          <p class="mt-3 text-sm text-zinc-500">No background windows found.</p>
-        {:else}
-          <div class="mt-3 grid gap-2">
-            {#each snapshot.background_windows as window}
-              <div class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
-                {windowLabel(window)}
-              </div>
-            {/each}
-          </div>
+        {#if backgroundWindowsOpen}
+          {#if snapshot.background_windows.length === 0}
+            <p class="mt-3 text-sm text-zinc-500">No background windows found.</p>
+          {:else}
+            <div class="mt-3 grid gap-2">
+              {#each snapshot.background_windows as window}
+                <div class="rounded border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
+                  {windowLabel(window)}
+                </div>
+              {/each}
+            </div>
+          {/if}
         {/if}
       </section>
     </div>

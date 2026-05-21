@@ -1,7 +1,7 @@
 use std::sync::{mpsc, Arc, Mutex};
 
 use omni_palette::{
-    backend_contract::PaletteSnapshotDto,
+    backend_contract::{PaletteSnapshotDto, ScoreBreakdownDto},
     domain::action::{CommandPriority, ContextRoot, FocusState},
     platform::{
         platform_interface::RawWindowHandleExt, windows::context::context::get_hwnd_from_raw,
@@ -14,7 +14,7 @@ use crate::RuntimeSettingsResultStatusDto;
 
 const DEBUG_WINDOW_LABEL: &str = "debug";
 const MAX_DEBUG_BACKGROUND_WINDOWS: usize = 12;
-const MAX_DEBUG_COMMAND_ROWS: usize = 8;
+const MAX_DEBUG_COMMAND_ROWS: usize = 40;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DebugOverlayStatusDto {
@@ -229,6 +229,7 @@ pub struct DebugCommandRowDto {
     pub priority: CommandPriority,
     pub favorite: bool,
     pub score: i32,
+    pub score_breakdown: Option<ScoreBreakdownDto>,
     pub tags: Vec<String>,
 }
 
@@ -324,6 +325,7 @@ impl DebugDiagnosticsState {
                     priority: command.priority,
                     favorite: command.favorite,
                     score: command.score,
+                    score_breakdown: command.score_breakdown,
                     tags: command.tags,
                 })
                 .collect(),

@@ -1032,6 +1032,7 @@ mod tests {
                     tags: Vec::new(),
                     original_order: index,
                     score: 0,
+                    score_breakdown: None,
                     label_matches: Vec::<MatchRangeDto>::new(),
                 })
                 .collect(),

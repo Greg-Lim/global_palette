@@ -10,7 +10,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::{
     core::{
-        command_filter::{filter_commands, FilterableCommand},
+        command_filter::{filter_commands, FilterableCommand, ScoreBreakdown},
         plugins::PluginRegistry,
         registry::registry::UnitAction,
         search::MatchRange,
@@ -87,7 +87,43 @@ pub struct CommandDto {
     pub tags: Vec<String>,
     pub original_order: usize,
     pub score: i32,
+    pub score_breakdown: Option<ScoreBreakdownDto>,
     pub label_matches: Vec<MatchRangeDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScoreBreakdownDto {
+    pub label_score: Option<i32>,
+    pub tag_score: Option<i32>,
+    pub tag_contribution: i32,
+    pub word_initial_bonus: i32,
+    pub raw_score: i32,
+    pub focus_multiplier_percent: i32,
+    pub priority_multiplier_percent: i32,
+    pub priority_bonus: i32,
+    pub favorite_multiplier_percent: i32,
+    pub favorite_bonus: i32,
+    pub adjusted_score: i32,
+    pub suppressed_bucket: bool,
+}
+
+impl From<ScoreBreakdown> for ScoreBreakdownDto {
+    fn from(breakdown: ScoreBreakdown) -> Self {
+        Self {
+            label_score: breakdown.label_score,
+            tag_score: breakdown.tag_score,
+            tag_contribution: breakdown.tag_contribution,
+            word_initial_bonus: breakdown.word_initial_bonus,
+            raw_score: breakdown.raw_score,
+            focus_multiplier_percent: breakdown.focus_multiplier_percent,
+            priority_multiplier_percent: breakdown.priority_multiplier_percent,
+            priority_bonus: breakdown.priority_bonus,
+            favorite_multiplier_percent: breakdown.favorite_multiplier_percent,
+            favorite_bonus: breakdown.favorite_bonus,
+            adjusted_score: breakdown.adjusted_score,
+            suppressed_bucket: breakdown.suppressed_bucket,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -412,7 +448,12 @@ impl BackendCommand {
         )
     }
 
-    pub fn to_dto(&self, label_matches: Vec<MatchRange>, score: i32) -> CommandDto {
+    pub fn to_dto(
+        &self,
+        label_matches: Vec<MatchRange>,
+        score: i32,
+        score_breakdown: Option<ScoreBreakdown>,
+    ) -> CommandDto {
         CommandDto {
             id: self.id.clone(),
             label: self.label.clone(),
@@ -424,6 +465,7 @@ impl BackendCommand {
             tags: self.metadata.tags.clone(),
             original_order: self.original_order,
             score,
+            score_breakdown: score_breakdown.map(Into::into),
             label_matches: label_matches.into_iter().map(Into::into).collect(),
         }
     }
@@ -524,7 +566,13 @@ impl CommandSession {
     pub fn search(&self, query: &str) -> PaletteSnapshotDto {
         let commands = filter_commands(&self.commands, query)
             .into_iter()
-            .map(|row| self.commands[row.command_index].to_dto(row.label_matches, row.score))
+            .map(|row| {
+                self.commands[row.command_index].to_dto(
+                    row.label_matches,
+                    row.score,
+                    row.score_breakdown,
+                )
+            })
             .collect();
 
         PaletteSnapshotDto {
@@ -682,7 +730,7 @@ impl PaletteBackend {
                     commands: vec![backend_error_command(format!(
                         "Command session lock poisoned: {err}"
                     ))
-                    .to_dto(Vec::new(), 0)],
+                    .to_dto(Vec::new(), 0, None)],
                 };
             }
         }
@@ -698,7 +746,7 @@ impl PaletteBackend {
             Err(err) => PaletteSnapshotDto {
                 session_id: new_session_id(),
                 query: query.to_string(),
-                commands: vec![backend_error_command(err).to_dto(Vec::new(), 0)],
+                commands: vec![backend_error_command(err).to_dto(Vec::new(), 0, None)],
             },
         }
     }
@@ -944,7 +992,7 @@ mod tests {
             7,
         );
 
-        let dto = command.to_dto(vec![MatchRange { start: 8, end: 11 }], 42);
+        let dto = command.to_dto(vec![MatchRange { start: 8, end: 11 }], 42, None);
 
         assert_eq!(dto.id.value(), "cmd-1");
         assert_eq!(dto.label, "Chrome: New tab");
@@ -983,7 +1031,7 @@ mod tests {
             executor,
         );
 
-        let dto = command.to_dto(Vec::new(), 0);
+        let dto = command.to_dto(Vec::new(), 0, None);
 
         assert_eq!(
             dto.guide_hint,
@@ -1013,8 +1061,8 @@ mod tests {
             Box::new(|| Ok("reloaded".to_string())),
         );
 
-        assert_eq!(plugin.to_dto(Vec::new(), 0).guide_hint, None);
-        assert_eq!(reload.to_dto(Vec::new(), 0).guide_hint, None);
+        assert_eq!(plugin.to_dto(Vec::new(), 0, None).guide_hint, None);
+        assert_eq!(reload.to_dto(Vec::new(), 0, None).guide_hint, None);
     }
 
     #[test]

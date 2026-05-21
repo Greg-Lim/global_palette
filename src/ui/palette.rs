@@ -507,6 +507,7 @@ mod tests {
             .map(|command_index| FilteredCommand {
                 command_index,
                 score: 0,
+                score_breakdown: None,
                 label_matches: Vec::new(),
                 is_prefix: false,
                 span: 0,

@@ -177,11 +177,21 @@ describe("Svelte frontend entrypoint", () => {
       "window.setInterval(refreshDebugSnapshot, DEBUG_SNAPSHOT_REFRESH_MS)",
     );
     expect(debugSource).toContain("let refreshInFlight = false");
+    expect(debugSource).toContain("let paletteRowsOpen = true");
+    expect(debugSource).toContain("let backgroundWindowsOpen = true");
+    expect(debugSource).toContain("let showScoreBreakdown = false");
     expect(debugSource).toContain("Foreground");
     expect(debugSource).toContain("Interaction");
     expect(debugSource).toContain("Command Candidates");
     expect(debugSource).toContain("Palette Filter");
+    expect(debugSource).toContain("aria-expanded={paletteRowsOpen}");
+    expect(debugSource).toContain("Score breakdown");
+    expect(debugSource).toContain("score_breakdown");
+    expect(debugSource).toContain("% focus");
+    expect(debugSource).toContain("% priority");
+    expect(debugSource).toContain("% favorite");
     expect(debugSource).toContain("Background Windows");
+    expect(debugSource).toContain("aria-expanded={backgroundWindowsOpen}");
     expect(debugSource).not.toContain("closeDebugOverlay");
     expect(debugSource).not.toContain("Refreshing...");
     expect(debugSource).not.toContain("onclick={refreshDebugSnapshot}");

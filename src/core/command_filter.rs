@@ -10,9 +10,26 @@ const FAVORITE_BONUS: i32 = 3;
 pub struct FilteredCommand {
     pub command_index: usize,
     pub score: i32,
+    pub score_breakdown: Option<ScoreBreakdown>,
     pub label_matches: Vec<MatchRange>,
     pub is_prefix: bool,
     pub span: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScoreBreakdown {
+    pub label_score: Option<i32>,
+    pub tag_score: Option<i32>,
+    pub tag_contribution: i32,
+    pub word_initial_bonus: i32,
+    pub raw_score: i32,
+    pub focus_multiplier_percent: i32,
+    pub priority_multiplier_percent: i32,
+    pub priority_bonus: i32,
+    pub favorite_multiplier_percent: i32,
+    pub favorite_bonus: i32,
+    pub adjusted_score: i32,
+    pub suppressed_bucket: bool,
 }
 
 pub trait FilterableCommand {
@@ -29,6 +46,7 @@ pub fn initial_filtered_commands(command_count: usize) -> Vec<FilteredCommand> {
         .map(|command_index| FilteredCommand {
             command_index,
             score: 0,
+            score_breakdown: None,
             label_matches: Vec::new(),
             is_prefix: false,
             span: 0,
@@ -115,45 +133,124 @@ fn score_command<T: FilterableCommand>(
         .filter_map(|tag| score_fuzzy(tag, query))
         .max_by(|a, b| a.score.cmp(&b.score));
 
-    let mut result = match (label_match, tag_match) {
-        (Some(label), Some(tag)) => FilteredCommand {
-            command_index,
-            score: label.score + (tag.score * 3 / 10),
-            label_matches: label.ranges,
-            is_prefix: label.is_prefix,
-            span: label.span,
-        },
-        (Some(label), None) => FilteredCommand {
-            command_index,
-            score: label.score,
-            label_matches: label.ranges,
-            is_prefix: label.is_prefix,
-            span: label.span,
-        },
-        (None, Some(tag)) => FilteredCommand {
-            command_index,
-            score: tag.score * 3 / 5,
-            label_matches: Vec::new(),
-            is_prefix: false,
-            span: usize::MAX,
-        },
+    let (mut result, label_score, tag_score, tag_contribution) = match (label_match, tag_match) {
+        (Some(label), Some(tag)) => {
+            let label_score = label.score;
+            let tag_score = tag.score;
+            let tag_contribution = tag_score * 3 / 10;
+            (
+                FilteredCommand {
+                    command_index,
+                    score: label_score,
+                    score_breakdown: None,
+                    label_matches: label.ranges,
+                    is_prefix: label.is_prefix,
+                    span: label.span,
+                },
+                Some(label_score),
+                Some(tag_score),
+                tag_contribution,
+            )
+        }
+        (Some(label), None) => {
+            let label_score = label.score;
+            (
+                FilteredCommand {
+                    command_index,
+                    score: label_score,
+                    score_breakdown: None,
+                    label_matches: label.ranges,
+                    is_prefix: label.is_prefix,
+                    span: label.span,
+                },
+                Some(label_score),
+                None,
+                0,
+            )
+        }
+        (None, Some(tag)) => {
+            let tag_score = tag.score;
+            let tag_contribution = tag_score * 3 / 5;
+            (
+                FilteredCommand {
+                    command_index,
+                    score: 0,
+                    score_breakdown: None,
+                    label_matches: Vec::new(),
+                    is_prefix: false,
+                    span: usize::MAX,
+                },
+                None,
+                Some(tag_score),
+                tag_contribution,
+            )
+        }
         (None, None) => return None,
     };
 
-    result.score += word_initial_bonus(command.label(), query.normalized_lower.as_str());
-    result.score = adjusted_score(result.score, command);
+    let initials = word_initial_bonus(command.label(), query.normalized_lower.as_str());
+    let raw_score = result.score + tag_contribution + initials;
+    let breakdown = build_score_breakdown(
+        label_score,
+        tag_score,
+        tag_contribution,
+        initials,
+        raw_score,
+        command,
+    );
+
+    result.score = breakdown.adjusted_score;
+    result.score_breakdown = Some(breakdown);
     Some(result)
 }
 
-fn adjusted_score<T: FilterableCommand>(raw_score: i32, command: &T) -> i32 {
+fn build_score_breakdown<T: FilterableCommand>(
+    label_score: Option<i32>,
+    tag_score: Option<i32>,
+    tag_contribution: i32,
+    word_initial_bonus: i32,
+    raw_score: i32,
+    command: &T,
+) -> ScoreBreakdown {
     let (priority_multiplier, priority_bonus) = priority_weight(command.priority());
-    let weighted_score = raw_score as i64
-        * focus_multiplier(command.focus_state()) as i64
-        * priority_multiplier as i64
-        * favorite_multiplier(command.favorite()) as i64
-        / SCORE_PERCENT_DENOMINATOR;
+    let focus_multiplier_percent = focus_multiplier(command.focus_state());
+    let favorite_multiplier_percent = favorite_multiplier(command.favorite());
+    let favorite_bonus = favorite_bonus(command.favorite());
+    let adjusted_score = weighted_score(
+        raw_score,
+        focus_multiplier_percent,
+        priority_multiplier,
+        favorite_multiplier_percent,
+    ) + priority_bonus
+        + favorite_bonus;
 
-    weighted_score as i32 + priority_bonus + favorite_bonus(command.favorite())
+    ScoreBreakdown {
+        label_score,
+        tag_score,
+        tag_contribution,
+        word_initial_bonus,
+        raw_score,
+        focus_multiplier_percent,
+        priority_multiplier_percent: priority_multiplier,
+        priority_bonus,
+        favorite_multiplier_percent,
+        favorite_bonus,
+        adjusted_score,
+        suppressed_bucket: is_suppressed(command),
+    }
+}
+
+fn weighted_score(
+    raw_score: i32,
+    focus_multiplier_percent: i32,
+    priority_multiplier_percent: i32,
+    favorite_multiplier_percent: i32,
+) -> i32 {
+    (raw_score as i64
+        * focus_multiplier_percent as i64
+        * priority_multiplier_percent as i64
+        * favorite_multiplier_percent as i64
+        / SCORE_PERCENT_DENOMINATOR) as i32
 }
 
 fn is_suppressed<T: FilterableCommand>(command: &T) -> bool {
@@ -360,6 +457,71 @@ mod tests {
             row.score,
             raw_score * 120 * 120 * 150 / 1_000_000 + 2 + 3
         );
+        assert_eq!(
+            row.score_breakdown
+                .as_ref()
+                .expect("searched rows should include score breakdown")
+                .adjusted_score,
+            row.score
+        );
+        assert_eq!(
+            row.score_breakdown
+                .as_ref()
+                .expect("searched rows should include score breakdown")
+                .raw_score,
+            raw_score
+        );
+        assert_eq!(
+            row.score_breakdown
+                .as_ref()
+                .expect("searched rows should include score breakdown")
+                .focus_multiplier_percent,
+            120
+        );
+        assert_eq!(
+            row.score_breakdown
+                .as_ref()
+                .expect("searched rows should include score breakdown")
+                .priority_multiplier_percent,
+            120
+        );
+        assert_eq!(
+            row.score_breakdown
+                .as_ref()
+                .expect("searched rows should include score breakdown")
+                .priority_bonus,
+            2
+        );
+        assert_eq!(
+            row.score_breakdown
+                .as_ref()
+                .expect("searched rows should include score breakdown")
+                .favorite_multiplier_percent,
+            150
+        );
+        assert_eq!(
+            row.score_breakdown
+                .as_ref()
+                .expect("searched rows should include score breakdown")
+                .favorite_bonus,
+            3
+        );
+    }
+
+    #[test]
+    fn empty_filter_rows_do_not_include_search_score_breakdown() {
+        let commands = vec![command(
+            "Chrome: New tab",
+            CommandPriority::Medium,
+            false,
+            &[],
+            0,
+        )];
+
+        let rows = filter_commands(&commands, "");
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].score_breakdown.is_none());
     }
 
     #[test]

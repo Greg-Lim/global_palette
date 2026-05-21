@@ -23,6 +23,7 @@ export type CommandRow = {
   tags: string[];
   original_order: number;
   score: number;
+  score_breakdown?: ScoreBreakdown | null;
   label_matches: MatchRange[];
 };
 
@@ -309,12 +310,28 @@ export type DebugCommandSummary = {
   high_priority: number;
 };
 
+export type ScoreBreakdown = {
+  label_score: number | null;
+  tag_score: number | null;
+  tag_contribution: number;
+  word_initial_bonus: number;
+  raw_score: number;
+  focus_multiplier_percent: number;
+  priority_multiplier_percent: number;
+  priority_bonus: number;
+  favorite_multiplier_percent: number;
+  favorite_bonus: number;
+  adjusted_score: number;
+  suppressed_bucket: boolean;
+};
+
 export type DebugCommandRow = {
   label: string;
   focus_state: CommandFocusState;
   priority: CommandPriority;
   favorite: boolean;
   score: number;
+  score_breakdown?: ScoreBreakdown | null;
   tags: string[];
 };
 

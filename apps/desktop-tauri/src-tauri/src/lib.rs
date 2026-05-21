@@ -1632,7 +1632,7 @@ mod tests {
     use crate::settings_window::SettingsWindowController;
 
     use omni_palette::{
-        backend_contract::{CommandDto, MatchRangeDto, PaletteSessionId},
+        backend_contract::{CommandDto, MatchRangeDto, PaletteSessionId, ScoreBreakdownDto},
         config::runtime::{CommandBehavior, RuntimePaths, ThemeMode},
         core::extensions::settings::load_extension_settings_values,
         domain::{
@@ -1755,7 +1755,7 @@ mod tests {
     #[test]
     fn debug_diagnostics_snapshot_preserves_latest_palette_rows() {
         let diagnostics = DebugDiagnosticsState::default();
-        diagnostics.record_palette_snapshot(&test_palette_snapshot("date", 10));
+        diagnostics.record_palette_snapshot(&test_palette_snapshot("date", 45));
 
         let snapshot = diagnostics.snapshot_from_context(
             empty_debug_context(),
@@ -1779,9 +1779,17 @@ mod tests {
         assert_eq!(snapshot.command_summary.favorites, 1);
         assert_eq!(snapshot.command_summary.suppressed_priority, 1);
         assert_eq!(snapshot.palette_state.query, "date");
-        assert_eq!(snapshot.palette_state.filtered_count, 10);
-        assert_eq!(snapshot.palette_state.top_rows.len(), 8);
+        assert_eq!(snapshot.palette_state.filtered_count, 45);
+        assert_eq!(snapshot.palette_state.top_rows.len(), 40);
         assert_eq!(snapshot.palette_state.top_rows[0].label, "Command 0");
+        assert_eq!(
+            snapshot.palette_state.top_rows[0]
+                .score_breakdown
+                .as_ref()
+                .expect("debug row should preserve score breakdown")
+                .adjusted_score,
+            0
+        );
     }
 
     #[test]
@@ -2993,6 +3001,20 @@ source = "wasm"
                     tags: vec!["debug".to_string()],
                     original_order: index,
                     score: index as i32,
+                    score_breakdown: Some(ScoreBreakdownDto {
+                        label_score: Some(index as i32),
+                        tag_score: None,
+                        tag_contribution: 0,
+                        word_initial_bonus: 0,
+                        raw_score: index as i32,
+                        focus_multiplier_percent: 100,
+                        priority_multiplier_percent: 100,
+                        priority_bonus: 0,
+                        favorite_multiplier_percent: 100,
+                        favorite_bonus: 0,
+                        adjusted_score: index as i32,
+                        suppressed_bucket: false,
+                    }),
                     label_matches: Vec::<MatchRangeDto>::new(),
                 })
                 .collect(),
