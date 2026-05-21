@@ -258,6 +258,24 @@ body {
   color: var(--settings-disabled-text);
 }
 
+.settings-stable-label {
+  display: inline-grid;
+  grid-template-areas: "label";
+  align-items: center;
+  justify-items: center;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.settings-stable-label-reserved,
+.settings-stable-label-visible {
+  grid-area: label;
+}
+
+.settings-stable-label-reserved {
+  visibility: hidden;
+}
+
 .settings-danger-button {
   border: 1px solid var(--settings-danger-border);
   border-radius: 6px;

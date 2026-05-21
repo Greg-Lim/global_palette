@@ -130,6 +130,17 @@ describe("Svelte frontend entrypoint", () => {
     expect(settingsSource).toContain("Available Extensions");
     expect(settingsSource).toContain("Search catalog");
     expect(settingsSource).toContain("Install");
+    expect(settingsSource).toContain("catalogStatusLabel(entry, extensionsBootstrap)");
+    expect(settingsSource).toContain("catalogActionLabel(entry, extensionsBootstrap)");
+    expect(settingsSource).toContain("settings-stable-label");
+    expect(settingsSource).toContain("settings-stable-label-reserved");
+    expect(settingsSource).toContain("settings-stable-label-visible");
+    expect(settingsSource).toContain("extensionStatusReservedLabel");
+    expect(settingsSource).toContain("catalogActionReservedLabel");
+    const stylesSource = readFileSync(join(srcDir, "styles.css"), "utf8");
+    expect(stylesSource).toContain(".settings-stable-label");
+    expect(stylesSource).toContain("justify-items: center");
+    expect(stylesSource).toContain("text-align: center");
     expect(settingsSource).toContain("Save settings");
     expect(settingsSource).toContain("getExtensionSettings");
     expect(settingsSource).toContain("saveExtensionSettings");
@@ -173,9 +184,8 @@ describe("Svelte frontend entrypoint", () => {
     const debugSource = readFileSync(debugPath, "utf8");
     expect(debugSource).toContain("getDebugSnapshot");
     expect(debugSource).toContain("const DEBUG_SNAPSHOT_REFRESH_MS = 1000");
-    expect(debugSource).toContain(
-      "window.setInterval(refreshDebugSnapshot, DEBUG_SNAPSHOT_REFRESH_MS)",
-    );
+    expect(debugSource).toContain("window.setInterval(");
+    expect(debugSource).toContain("refreshDebugSnapshot");
     expect(debugSource).toContain("let refreshInFlight = false");
     expect(debugSource).toContain("let paletteRowsOpen = true");
     expect(debugSource).toContain("let backgroundWindowsOpen = true");

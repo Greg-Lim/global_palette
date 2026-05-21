@@ -49,6 +49,17 @@
     failed: boolean;
   };
 
+  const EXTENSION_STATUS_RESERVED_LABEL = "Disabled";
+  const CATALOG_ACTION_RESERVED_LABEL = "Installing...";
+  const RECORD_SHORTCUT_RESERVED_LABEL = "Recording...";
+  const HEADER_RELOAD_RESERVED_LABEL = "Reload extensions";
+  const SAVE_SOURCE_RESERVED_LABEL = "Save Source";
+  const REFRESH_CATALOG_RESERVED_LABEL = "Refresh Catalog";
+  const CATALOG_RELOAD_RESERVED_LABEL = "Reload Extensions";
+  const EXTENSION_SETTINGS_RESERVED_LABEL = "Loading...";
+  const SAVE_SETTINGS_RESERVED_LABEL = "Save settings";
+  const SAVE_EXTENSION_SETTINGS_RESERVED_LABEL = "Save Settings";
+
   let activeSettingsPage: SettingsPage = "general";
   let settingsSaved: RuntimeSettings | null = null;
   let settingsDraft: RuntimeSettings | null = null;
@@ -618,6 +629,10 @@
     return extension.enabled ? "Enabled" : "Disabled";
   }
 
+  function extensionStatusReservedLabel(): string {
+    return EXTENSION_STATUS_RESERVED_LABEL;
+  }
+
   function extensionStatusPillClass(extension: ExtensionRow): string {
     return [
       "extension-status-pill rounded border px-3 py-1 text-xs font-medium",
@@ -625,16 +640,22 @@
     ].join(" ");
   }
 
-  function installedVersionForCatalogEntry(entry: CatalogEntry): string | null {
+  function installedVersionForCatalogEntry(
+    entry: CatalogEntry,
+    bootstrap: ExtensionsBootstrap | null,
+  ): string | null {
     return (
-      extensionsBootstrap?.downloaded_extensions.find(
+      bootstrap?.downloaded_extensions.find(
         (extension) => extension.id === entry.id && extension.source_id === "github",
       )?.version ?? null
     );
   }
 
-  function catalogActionLabel(entry: CatalogEntry): string {
-    const installedVersion = installedVersionForCatalogEntry(entry);
+  function catalogActionLabel(
+    entry: CatalogEntry,
+    bootstrap: ExtensionsBootstrap | null,
+  ): string {
+    const installedVersion = installedVersionForCatalogEntry(entry, bootstrap);
     if (!installedVersion) {
       return "Install";
     }
@@ -642,8 +663,15 @@
     return installedVersion === entry.version ? "Reinstall" : "Update";
   }
 
-  function catalogStatusLabel(entry: CatalogEntry): string | null {
-    const installedVersion = installedVersionForCatalogEntry(entry);
+  function catalogActionReservedLabel(): string {
+    return CATALOG_ACTION_RESERVED_LABEL;
+  }
+
+  function catalogStatusLabel(
+    entry: CatalogEntry,
+    bootstrap: ExtensionsBootstrap | null,
+  ): string | null {
+    const installedVersion = installedVersionForCatalogEntry(entry, bootstrap);
     if (!installedVersion) {
       return null;
     }
@@ -736,7 +764,14 @@
           onclick={reloadRuntimeState}
           type="button"
         >
-          {settingsReloading ? "Reloading..." : "Reload extensions"}
+          <span class="settings-stable-label">
+            <span aria-hidden="true" class="settings-stable-label-reserved">
+              {HEADER_RELOAD_RESERVED_LABEL}
+            </span>
+            <span class="settings-stable-label-visible">
+              {settingsReloading ? "Reloading..." : "Reload extensions"}
+            </span>
+          </span>
         </button>
       </header>
 
@@ -821,7 +856,14 @@
                     onclick={recordActivationShortcut}
                     type="button"
                   >
-                    {recordingActivationShortcut ? "Recording..." : "Record"}
+                    <span class="settings-stable-label">
+                      <span aria-hidden="true" class="settings-stable-label-reserved">
+                        {RECORD_SHORTCUT_RESERVED_LABEL}
+                      </span>
+                      <span class="settings-stable-label-visible">
+                        {recordingActivationShortcut ? "Recording..." : "Record"}
+                      </span>
+                    </span>
                   </button>
                   <button
                     class="settings-button"
@@ -949,7 +991,17 @@
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                           <span class={extensionStatusPillClass(extension)}>
-                            {extensionStatusLabel(extension)}
+                            <span class="settings-stable-label">
+                              <span
+                                aria-hidden="true"
+                                class="settings-stable-label-reserved"
+                              >
+                                {extensionStatusReservedLabel()}
+                              </span>
+                              <span class="settings-stable-label-visible">
+                                {extensionStatusLabel(extension)}
+                              </span>
+                            </span>
                           </span>
                           <ToggleSwitch
                             ariaLabel={`Toggle ${extension.name}`}
@@ -965,9 +1017,19 @@
                               onclick={() => openExtensionSettings(extension)}
                               type="button"
                             >
-                              {extensionSettingsLoadingKey === extensionKey(extension)
-                                ? "Loading..."
-                                : "Settings"}
+                              <span class="settings-stable-label">
+                                <span
+                                  aria-hidden="true"
+                                  class="settings-stable-label-reserved"
+                                >
+                                  {EXTENSION_SETTINGS_RESERVED_LABEL}
+                                </span>
+                                <span class="settings-stable-label-visible">
+                                  {extensionSettingsLoadingKey === extensionKey(extension)
+                                    ? "Loading..."
+                                    : "Settings"}
+                                </span>
+                              </span>
                             </button>
                           {/if}
                         </div>
@@ -1001,7 +1063,17 @@
                           </div>
                           <div class="flex flex-wrap items-center gap-2">
                             <span class={extensionStatusPillClass(extension)}>
-                              {extensionStatusLabel(extension)}
+                              <span class="settings-stable-label">
+                                <span
+                                  aria-hidden="true"
+                                  class="settings-stable-label-reserved"
+                                >
+                                  {extensionStatusReservedLabel()}
+                                </span>
+                                <span class="settings-stable-label-visible">
+                                  {extensionStatusLabel(extension)}
+                                </span>
+                              </span>
                             </span>
                             <ToggleSwitch
                               ariaLabel={`Toggle ${extension.name}`}
@@ -1017,9 +1089,19 @@
                                 onclick={() => openExtensionSettings(extension)}
                                 type="button"
                               >
-                                {extensionSettingsLoadingKey === extensionKey(extension)
-                                  ? "Loading..."
-                                  : "Settings"}
+                                <span class="settings-stable-label">
+                                  <span
+                                    aria-hidden="true"
+                                    class="settings-stable-label-reserved"
+                                  >
+                                    {EXTENSION_SETTINGS_RESERVED_LABEL}
+                                  </span>
+                                  <span class="settings-stable-label-visible">
+                                    {extensionSettingsLoadingKey === extensionKey(extension)
+                                      ? "Loading..."
+                                      : "Settings"}
+                                  </span>
+                                </span>
                               </button>
                             {/if}
                             <button
@@ -1092,7 +1174,14 @@
                   onclick={saveRuntimeSettings}
                   type="button"
                 >
-                  {settingsSaving ? "Saving..." : "Save Source"}
+                  <span class="settings-stable-label">
+                    <span aria-hidden="true" class="settings-stable-label-reserved">
+                      {SAVE_SOURCE_RESERVED_LABEL}
+                    </span>
+                    <span class="settings-stable-label-visible">
+                      {settingsSaving ? "Saving..." : "Save Source"}
+                    </span>
+                  </span>
                 </button>
                 <button
                   class="settings-button"
@@ -1100,7 +1189,14 @@
                   onclick={refreshExtensionCatalog}
                   type="button"
                 >
-                  {catalogRefreshing ? "Refreshing..." : "Refresh Catalog"}
+                  <span class="settings-stable-label">
+                    <span aria-hidden="true" class="settings-stable-label-reserved">
+                      {REFRESH_CATALOG_RESERVED_LABEL}
+                    </span>
+                    <span class="settings-stable-label-visible">
+                      {catalogRefreshing ? "Refreshing..." : "Refresh Catalog"}
+                    </span>
+                  </span>
                 </button>
                 <button
                   class="settings-button"
@@ -1108,7 +1204,14 @@
                   onclick={reloadRuntimeState}
                   type="button"
                 >
-                  {settingsReloading ? "Reloading..." : "Reload Extensions"}
+                  <span class="settings-stable-label">
+                    <span aria-hidden="true" class="settings-stable-label-reserved">
+                      {CATALOG_RELOAD_RESERVED_LABEL}
+                    </span>
+                    <span class="settings-stable-label-visible">
+                      {settingsReloading ? "Reloading..." : "Reload Extensions"}
+                    </span>
+                  </span>
                 </button>
               </div>
             </fieldset>
@@ -1146,9 +1249,9 @@
                           {#if entry.description}
                             <p class="settings-muted mt-1 text-sm">{entry.description}</p>
                           {/if}
-                          {#if catalogStatusLabel(entry)}
+                          {#if catalogStatusLabel(entry, extensionsBootstrap)}
                             <p class="mt-1 text-xs text-[var(--settings-accent)]">
-                              {catalogStatusLabel(entry)}
+                              {catalogStatusLabel(entry, extensionsBootstrap)}
                             </p>
                           {/if}
                         </div>
@@ -1160,9 +1263,19 @@
                               onclick={() => installCatalogExtension(entry)}
                               type="button"
                             >
-                              {catalogInstallingId === entry.id
-                                ? "Installing..."
-                                : catalogActionLabel(entry)}
+                              <span class="settings-stable-label">
+                                <span
+                                  aria-hidden="true"
+                                  class="settings-stable-label-reserved"
+                                >
+                                  {catalogActionReservedLabel()}
+                                </span>
+                                <span class="settings-stable-label-visible">
+                                  {catalogInstallingId === entry.id
+                                    ? "Installing..."
+                                    : catalogActionLabel(entry, extensionsBootstrap)}
+                                </span>
+                              </span>
                             </button>
                           {:else}
                             <span class="settings-muted text-sm">Unavailable</span>
@@ -1197,7 +1310,14 @@
                 onclick={saveRuntimeSettings}
                 type="button"
               >
-                {settingsSaving ? "Saving..." : "Save settings"}
+                <span class="settings-stable-label">
+                  <span aria-hidden="true" class="settings-stable-label-reserved">
+                    {SAVE_SETTINGS_RESERVED_LABEL}
+                  </span>
+                  <span class="settings-stable-label-visible">
+                    {settingsSaving ? "Saving..." : "Save settings"}
+                  </span>
+                </span>
               </button>
             </div>
           </div>
@@ -1373,7 +1493,14 @@
               onclick={saveExtensionSettingsPanel}
               type="button"
             >
-              {extensionSettingsPanel.saving ? "Saving..." : "Save Settings"}
+              <span class="settings-stable-label">
+                <span aria-hidden="true" class="settings-stable-label-reserved">
+                  {SAVE_EXTENSION_SETTINGS_RESERVED_LABEL}
+                </span>
+                <span class="settings-stable-label-visible">
+                  {extensionSettingsPanel.saving ? "Saving..." : "Save Settings"}
+                </span>
+              </span>
             </button>
           </div>
         </footer>
