@@ -1,6 +1,11 @@
 use crate::core::search::{prepare_query, score_fuzzy, MatchRange, PreparedQuery};
 use crate::domain::action::{CommandPriority, FocusState};
 
+const SCORE_PERCENT_DENOMINATOR: i64 = 1_000_000;
+const FAVORITE_MULTIPLIER_PERCENT: i32 = 150;
+const DEFAULT_MULTIPLIER_PERCENT: i32 = 100;
+const FAVORITE_BONUS: i32 = 3;
+
 #[derive(Debug, Clone)]
 pub struct FilteredCommand {
     pub command_index: usize,
@@ -50,13 +55,8 @@ pub fn filter_commands<T: FilterableCommand>(
         let command_a = &commands[a.command_index];
         let command_b = &commands[b.command_index];
 
-        command_b
-            .favorite()
-            .cmp(&command_a.favorite())
-            .then_with(|| {
-                focus_rank(command_b.focus_state()).cmp(&focus_rank(command_a.focus_state()))
-            })
-            .then_with(|| command_b.priority().cmp(&command_a.priority()))
+        is_suppressed(command_a)
+            .cmp(&is_suppressed(command_b))
             .then_with(|| b.score.cmp(&a.score))
             .then_with(|| b.is_prefix.cmp(&a.is_prefix))
             .then_with(|| a.span.cmp(&b.span))
@@ -141,15 +141,50 @@ fn score_command<T: FilterableCommand>(
     };
 
     result.score += word_initial_bonus(command.label(), query.normalized_lower.as_str());
-    result.score += focus_bonus(command.focus_state());
+    result.score = adjusted_score(result.score, command);
     Some(result)
 }
 
-fn focus_bonus(focus_state: FocusState) -> i32 {
+fn adjusted_score<T: FilterableCommand>(raw_score: i32, command: &T) -> i32 {
+    let (priority_multiplier, priority_bonus) = priority_weight(command.priority());
+    let weighted_score = raw_score as i64
+        * focus_multiplier(command.focus_state()) as i64
+        * priority_multiplier as i64
+        * favorite_multiplier(command.favorite()) as i64
+        / SCORE_PERCENT_DENOMINATOR;
+
+    weighted_score as i32 + priority_bonus + favorite_bonus(command.favorite())
+}
+
+fn is_suppressed<T: FilterableCommand>(command: &T) -> bool {
+    command.priority() == CommandPriority::Suppressed
+}
+
+fn favorite_multiplier(favorite: bool) -> i32 {
+    if favorite {
+        FAVORITE_MULTIPLIER_PERCENT
+    } else {
+        DEFAULT_MULTIPLIER_PERCENT
+    }
+}
+
+fn favorite_bonus(favorite: bool) -> i32 {
+    if favorite { FAVORITE_BONUS } else { 0 }
+}
+
+fn focus_multiplier(focus_state: FocusState) -> i32 {
     match focus_state {
-        FocusState::Focused => 6,
-        FocusState::Background => 3,
-        FocusState::Global => 1,
+        FocusState::Focused => 120,
+        FocusState::Background | FocusState::Global => DEFAULT_MULTIPLIER_PERCENT,
+    }
+}
+
+fn priority_weight(priority: CommandPriority) -> (i32, i32) {
+    match priority {
+        CommandPriority::High => (120, 2),
+        CommandPriority::Medium => (100, 1),
+        CommandPriority::Low => (80, 0),
+        CommandPriority::Suppressed => (50, 0),
     }
 }
 
@@ -305,48 +340,87 @@ mod tests {
     }
 
     #[test]
-    fn sorting_uses_favorite_then_priority_then_fuzzy_score() {
+    fn adjusted_score_uses_integer_weight_formula() {
+        let command = command(
+            "Chrome: Foo",
+            CommandPriority::High,
+            true,
+            &[],
+            0,
+        );
+        let query = prepare_query("foo");
+        let raw_score = score_fuzzy(command.label(), &query)
+            .expect("label should match")
+            .score
+            + word_initial_bonus(command.label(), query.normalized_lower.as_str());
+
+        let row = score_command(0, &command, &query).expect("command should match");
+
+        assert_eq!(
+            row.score,
+            raw_score * 120 * 120 * 150 / 1_000_000 + 2 + 3
+        );
+    }
+
+    #[test]
+    fn searched_results_apply_favorite_weight_without_hard_bucket() {
         let commands = vec![
-            command("Chrome: Foo medium", CommandPriority::Medium, false, &[], 0),
-            command("Chrome: Foo high", CommandPriority::High, false, &[], 1),
             command(
-                "Chrome: Foo suppressed",
-                CommandPriority::Suppressed,
+                "Chrome: Foo",
+                CommandPriority::Medium,
                 false,
+                &[],
+                0,
+            ),
+            command(
+                "Chrome: Foo",
+                CommandPriority::Medium,
+                true,
+                &[],
+                1,
+            ),
+            command(
+                "Chrome: Bookmark current page",
+                CommandPriority::Medium,
+                true,
                 &[],
                 2,
             ),
             command(
-                "Chrome: Foo favorite suppressed",
-                CommandPriority::Suppressed,
-                true,
+                "Chrome: Go to bottom of page",
+                CommandPriority::Low,
+                false,
                 &[],
                 3,
             ),
-            command(
-                "Chrome: Foo favorite high",
-                CommandPriority::High,
-                true,
-                &[],
-                4,
-            ),
         ];
 
-        let rows = filter_commands(&commands, "foo");
-        let labels: Vec<&str> = rows
+        let foo_rows = filter_commands(&commands, "foo");
+        let favorite_foo = foo_rows
+            .iter()
+            .find(|row| row.command_index == 1)
+            .expect("favorite foo should match");
+        let plain_foo = foo_rows
+            .iter()
+            .find(|row| row.command_index == 0)
+            .expect("plain foo should match");
+
+        assert!(favorite_foo.score > plain_foo.score);
+        assert_eq!(foo_rows[0].command_index, 1);
+
+        let bot_rows = filter_commands(&commands, "bot");
+        let labels: Vec<&str> = bot_rows
             .iter()
             .map(|row| commands[row.command_index].label.as_str())
             .collect();
 
-        assert_eq!(
-            labels,
-            vec![
-                "Chrome: Foo favorite high",
-                "Chrome: Foo favorite suppressed",
-                "Chrome: Foo high",
-                "Chrome: Foo medium",
-                "Chrome: Foo suppressed",
-            ]
+        assert!(
+            labels
+                .iter()
+                .position(|label| *label == "Chrome: Go to bottom of page")
+                < labels
+                    .iter()
+                    .position(|label| *label == "Chrome: Bookmark current page")
         );
     }
 
@@ -393,74 +467,233 @@ mod tests {
     }
 
     #[test]
-    fn searched_results_keep_priority_before_fuzzy_quality() {
+    fn searched_results_apply_priority_weight_without_hard_bucket() {
         let commands = vec![
             command(
-                "Chrome: Switch to tab 1",
-                CommandPriority::Suppressed,
+                "Chrome: Foo",
+                CommandPriority::High,
                 false,
                 &[],
                 0,
             ),
             command(
-                "Chrome: Scroll down",
+                "Chrome: Foo",
                 CommandPriority::Medium,
                 false,
                 &[],
                 1,
             ),
             command(
-                "Chrome: Switch to last tab",
-                CommandPriority::High,
+                "Chrome: Foo",
+                CommandPriority::Low,
                 false,
                 &[],
                 2,
             ),
+            command(
+                "Chrome: Bookmark current page",
+                CommandPriority::Medium,
+                false,
+                &[],
+                3,
+            ),
+            command(
+                "Chrome: Go to bottom of page",
+                CommandPriority::Low,
+                false,
+                &[],
+                4,
+            ),
         ];
 
-        let rows = filter_commands(&commands, "sw");
-        let labels: Vec<&str> = rows
+        let foo_rows = filter_commands(&commands, "foo");
+        let high_score = foo_rows
+            .iter()
+            .find(|row| row.command_index == 0)
+            .expect("high priority foo should match")
+            .score;
+        let medium_score = foo_rows
+            .iter()
+            .find(|row| row.command_index == 1)
+            .expect("medium priority foo should match")
+            .score;
+        let low_score = foo_rows
+            .iter()
+            .find(|row| row.command_index == 2)
+            .expect("low priority foo should match")
+            .score;
+
+        assert!(high_score > medium_score);
+        assert!(medium_score > low_score);
+
+        let bot_rows = filter_commands(&commands, "bot");
+        let labels: Vec<&str> = bot_rows
             .iter()
             .map(|row| commands[row.command_index].label.as_str())
             .collect();
 
+        assert!(
+            labels
+                .iter()
+                .position(|label| *label == "Chrome: Go to bottom of page")
+                < labels
+                    .iter()
+                    .position(|label| *label == "Chrome: Bookmark current page")
+        );
+    }
+
+    #[test]
+    fn searched_results_apply_focus_weight_without_hard_bucket() {
+        let commands = vec![
+            command_with_focus(
+                "Chrome: Foo",
+                CommandPriority::Medium,
+                FocusState::Global,
+                0,
+            ),
+            command_with_focus(
+                "Chrome: Foo",
+                CommandPriority::Medium,
+                FocusState::Focused,
+                1,
+            ),
+            command_with_focus(
+                "Chrome: Bookmark current page",
+                CommandPriority::Medium,
+                FocusState::Focused,
+                2,
+            ),
+            command_with_focus(
+                "Chrome: Go to bottom of page",
+                CommandPriority::Low,
+                FocusState::Global,
+                3,
+            ),
+        ];
+
+        let foo_rows = filter_commands(&commands, "foo");
+        let focused_score = foo_rows
+            .iter()
+            .find(|row| row.command_index == 1)
+            .expect("focused foo should match")
+            .score;
+        let global_score = foo_rows
+            .iter()
+            .find(|row| row.command_index == 0)
+            .expect("global foo should match")
+            .score;
+
+        assert!(focused_score > global_score);
+        assert_eq!(foo_rows[0].command_index, 1);
+
+        let bot_rows = filter_commands(&commands, "bot");
+        let labels: Vec<&str> = bot_rows
+            .iter()
+            .map(|row| commands[row.command_index].label.as_str())
+            .collect();
+
+        assert!(
+            labels
+                .iter()
+                .position(|label| *label == "Chrome: Go to bottom of page")
+                < labels
+                    .iter()
+                    .position(|label| *label == "Chrome: Bookmark current page")
+        );
+    }
+
+    #[test]
+    fn searched_results_keep_suppressed_commands_in_bottom_bucket() {
+        let commands = vec![
+            command(
+                "Chrome: Bookmark current page",
+                CommandPriority::Low,
+                false,
+                &[],
+                0,
+            ),
+            command(
+                "Chrome: Go to bottom of page",
+                CommandPriority::Suppressed,
+                false,
+                &[],
+                1,
+            ),
+        ];
+
+        let rows = filter_commands(&commands, "bot");
+        let labels: Vec<&str> = rows
+            .iter()
+            .map(|row| commands[row.command_index].label.as_str())
+            .collect();
+        let suppressed = rows
+            .iter()
+            .find(|row| row.command_index == 1)
+            .expect("suppressed bottom command should match");
+        let non_suppressed = rows
+            .iter()
+            .find(|row| row.command_index == 0)
+            .expect("non-suppressed bookmark command should match");
+
+        assert!(suppressed.score > non_suppressed.score);
         assert_eq!(
             labels,
             vec![
-                "Chrome: Switch to last tab",
-                "Chrome: Scroll down",
-                "Chrome: Switch to tab 1",
+                "Chrome: Bookmark current page",
+                "Chrome: Go to bottom of page",
             ]
         );
     }
 
     #[test]
-    fn focused_commands_rank_above_global_commands_before_priority() {
+    fn chrome_bot_results_rank_bottom_by_weighted_match_score() {
         let commands = vec![
-            command_with_focus(
-                "Windows: Open File Explorer",
-                CommandPriority::High,
-                FocusState::Global,
+            command(
+                "Chrome: Bookmark current page",
+                CommandPriority::Medium,
+                false,
+                &[],
                 0,
             ),
-            command_with_focus(
-                "Chrome: Open file",
-                CommandPriority::Suppressed,
-                FocusState::Focused,
+            command(
+                "Chrome: Go to bottom of page",
+                CommandPriority::Low,
+                false,
+                &[],
                 1,
+            ),
+            command(
+                "Chrome: Bookmark all open tabs",
+                CommandPriority::Low,
+                false,
+                &[],
+                2,
+            ),
+            command(
+                "Chrome: Clear Browsing Data",
+                CommandPriority::Suppressed,
+                false,
+                &[],
+                3,
             ),
         ];
 
-        let rows = filter_commands(&commands, "file");
+        let rows = filter_commands(&commands, "bot");
         let labels: Vec<&str> = rows
             .iter()
             .map(|row| commands[row.command_index].label.as_str())
             .collect();
 
-        assert_eq!(
-            labels,
-            vec!["Chrome: Open file", "Windows: Open File Explorer"]
+        assert_eq!(labels.first(), Some(&"Chrome: Go to bottom of page"));
+        assert!(
+            labels
+                .iter()
+                .position(|label| *label == "Chrome: Go to bottom of page")
+                < labels
+                    .iter()
+                    .position(|label| *label == "Chrome: Bookmark current page")
         );
+        assert_eq!(labels.last(), Some(&"Chrome: Clear Browsing Data"));
     }
 
     #[test]

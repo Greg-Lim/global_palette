@@ -4,21 +4,27 @@
   import type { DebugOverlayStatus, DebugSnapshot } from "./commands";
   import { formatDebugOverlayStatus, paletteApi } from "./commands";
 
+  const DEBUG_SNAPSHOT_REFRESH_MS = 1000;
+
   let status: DebugOverlayStatus | null = null;
   let snapshot: DebugSnapshot | null = null;
   let message: string | null = null;
   let failed = false;
-  let loading = true;
+  let refreshInFlight = false;
 
   onMount(() => {
     refreshDebugSnapshot();
-    const interval = window.setInterval(refreshDebugSnapshot, 1000);
+    const interval = window.setInterval(refreshDebugSnapshot, DEBUG_SNAPSHOT_REFRESH_MS);
 
     return () => window.clearInterval(interval);
   });
 
   function refreshDebugSnapshot() {
-    loading = true;
+    if (refreshInFlight) {
+      return;
+    }
+
+    refreshInFlight = true;
     Promise.all([paletteApi.getDebugOverlayStatus(), paletteApi.getDebugSnapshot()])
       .then(([nextStatus, nextSnapshot]) => {
         status = nextStatus;
@@ -31,21 +37,7 @@
         failed = true;
       })
       .finally(() => {
-        loading = false;
-      });
-  }
-
-  function closeDebugOverlay() {
-    paletteApi
-      .closeDebugOverlay()
-      .then((nextStatus) => {
-        status = nextStatus;
-        message = nextStatus.message;
-        failed = nextStatus.status === "failed";
-      })
-      .catch((error: unknown) => {
-        message = errorMessage(error);
-        failed = true;
+        refreshInFlight = false;
       });
   }
 
@@ -62,28 +54,12 @@
 </script>
 
 <main class="min-h-screen bg-zinc-950 p-4 text-zinc-100">
-  <header class="flex items-start justify-between gap-4">
+  <header>
     <div>
       <h1 class="text-lg font-semibold">Debug Overlay</h1>
       {#if status}
         <p class="mt-1 text-sm text-zinc-400">{formatDebugOverlayStatus(status)}</p>
       {/if}
-    </div>
-    <div class="flex gap-2">
-      <button
-        class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100"
-        onclick={refreshDebugSnapshot}
-        type="button"
-      >
-        {loading ? "Refreshing..." : "Refresh"}
-      </button>
-      <button
-        class="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-100"
-        onclick={closeDebugOverlay}
-        type="button"
-      >
-        Close
-      </button>
     </div>
   </header>
 

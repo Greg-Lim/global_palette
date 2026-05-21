@@ -172,12 +172,19 @@ describe("Svelte frontend entrypoint", () => {
 
     const debugSource = readFileSync(debugPath, "utf8");
     expect(debugSource).toContain("getDebugSnapshot");
-    expect(debugSource).toContain("closeDebugOverlay");
+    expect(debugSource).toContain("const DEBUG_SNAPSHOT_REFRESH_MS = 1000");
+    expect(debugSource).toContain(
+      "window.setInterval(refreshDebugSnapshot, DEBUG_SNAPSHOT_REFRESH_MS)",
+    );
+    expect(debugSource).toContain("let refreshInFlight = false");
     expect(debugSource).toContain("Foreground");
     expect(debugSource).toContain("Interaction");
     expect(debugSource).toContain("Command Candidates");
     expect(debugSource).toContain("Palette Filter");
     expect(debugSource).toContain("Background Windows");
+    expect(debugSource).not.toContain("closeDebugOverlay");
+    expect(debugSource).not.toContain("Refreshing...");
+    expect(debugSource).not.toContain("onclick={refreshDebugSnapshot}");
   });
 
   it("renders guide mode without an outer shadow and with larger keycaps", () => {
