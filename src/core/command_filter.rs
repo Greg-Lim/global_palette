@@ -266,7 +266,11 @@ fn favorite_multiplier(favorite: bool) -> i32 {
 }
 
 fn favorite_bonus(favorite: bool) -> i32 {
-    if favorite { FAVORITE_BONUS } else { 0 }
+    if favorite {
+        FAVORITE_BONUS
+    } else {
+        0
+    }
 }
 
 fn focus_multiplier(focus_state: FocusState) -> i32 {
@@ -438,13 +442,7 @@ mod tests {
 
     #[test]
     fn adjusted_score_uses_integer_weight_formula() {
-        let command = command(
-            "Chrome: Foo",
-            CommandPriority::High,
-            true,
-            &[],
-            0,
-        );
+        let command = command("Chrome: Foo", CommandPriority::High, true, &[], 0);
         let query = prepare_query("foo");
         let raw_score = score_fuzzy(command.label(), &query)
             .expect("label should match")
@@ -453,10 +451,7 @@ mod tests {
 
         let row = score_command(0, &command, &query).expect("command should match");
 
-        assert_eq!(
-            row.score,
-            raw_score * 120 * 120 * 150 / 1_000_000 + 2 + 3
-        );
+        assert_eq!(row.score, raw_score * 120 * 120 * 150 / 1_000_000 + 2 + 3);
         assert_eq!(
             row.score_breakdown
                 .as_ref()
@@ -527,20 +522,8 @@ mod tests {
     #[test]
     fn searched_results_apply_favorite_weight_without_hard_bucket() {
         let commands = vec![
-            command(
-                "Chrome: Foo",
-                CommandPriority::Medium,
-                false,
-                &[],
-                0,
-            ),
-            command(
-                "Chrome: Foo",
-                CommandPriority::Medium,
-                true,
-                &[],
-                1,
-            ),
+            command("Chrome: Foo", CommandPriority::Medium, false, &[], 0),
+            command("Chrome: Foo", CommandPriority::Medium, true, &[], 1),
             command(
                 "Chrome: Bookmark current page",
                 CommandPriority::Medium,
@@ -631,27 +614,9 @@ mod tests {
     #[test]
     fn searched_results_apply_priority_weight_without_hard_bucket() {
         let commands = vec![
-            command(
-                "Chrome: Foo",
-                CommandPriority::High,
-                false,
-                &[],
-                0,
-            ),
-            command(
-                "Chrome: Foo",
-                CommandPriority::Medium,
-                false,
-                &[],
-                1,
-            ),
-            command(
-                "Chrome: Foo",
-                CommandPriority::Low,
-                false,
-                &[],
-                2,
-            ),
+            command("Chrome: Foo", CommandPriority::High, false, &[], 0),
+            command("Chrome: Foo", CommandPriority::Medium, false, &[], 1),
+            command("Chrome: Foo", CommandPriority::Low, false, &[], 2),
             command(
                 "Chrome: Bookmark current page",
                 CommandPriority::Medium,

@@ -1255,7 +1255,14 @@ fn get_palette_bootstrap(state: State<'_, AppState>) -> PaletteBootstrapDto {
 #[tauri::command]
 fn search_commands(query: String, state: State<'_, AppState>) -> PaletteSnapshotDto {
     let snapshot = state.backend.search_commands(&query);
-    state.debug_diagnostics.record_palette_snapshot(&snapshot);
+    let diagnostics_snapshot = if state.debug_overlay.status().visible {
+        state.backend.search_commands_with_score_breakdown(&query)
+    } else {
+        snapshot.clone()
+    };
+    state
+        .debug_diagnostics
+        .record_palette_snapshot(&diagnostics_snapshot);
     snapshot
 }
 

@@ -564,13 +564,28 @@ impl CommandSession {
     }
 
     pub fn search(&self, query: &str) -> PaletteSnapshotDto {
+        self.search_with_breakdown(query, false)
+    }
+
+    pub fn search_with_score_breakdown(&self, query: &str) -> PaletteSnapshotDto {
+        self.search_with_breakdown(query, true)
+    }
+
+    fn search_with_breakdown(
+        &self,
+        query: &str,
+        include_score_breakdown: bool,
+    ) -> PaletteSnapshotDto {
         let commands = filter_commands(&self.commands, query)
             .into_iter()
             .map(|row| {
+                let score_breakdown = include_score_breakdown
+                    .then_some(row.score_breakdown)
+                    .flatten();
                 self.commands[row.command_index].to_dto(
                     row.label_matches,
                     row.score,
-                    row.score_breakdown,
+                    score_breakdown,
                 )
             })
             .collect();
@@ -675,6 +690,11 @@ impl PaletteSessionState {
     fn open_snapshot(&self, query: &str) -> Option<PaletteSnapshotDto> {
         self.open.then(|| self.session.search(query))
     }
+
+    fn open_snapshot_with_score_breakdown(&self, query: &str) -> Option<PaletteSnapshotDto> {
+        self.open
+            .then(|| self.session.search_with_score_breakdown(query))
+    }
 }
 
 pub struct PaletteBackend {
@@ -717,9 +737,26 @@ impl PaletteBackend {
     }
 
     pub fn search_commands(&self, query: &str) -> PaletteSnapshotDto {
+        self.search_commands_with_breakdown(query, false)
+    }
+
+    pub fn search_commands_with_score_breakdown(&self, query: &str) -> PaletteSnapshotDto {
+        self.search_commands_with_breakdown(query, true)
+    }
+
+    fn search_commands_with_breakdown(
+        &self,
+        query: &str,
+        include_score_breakdown: bool,
+    ) -> PaletteSnapshotDto {
         match self.session.read() {
             Ok(current_session) => {
-                if let Some(snapshot) = current_session.open_snapshot(query) {
+                let snapshot = if include_score_breakdown {
+                    current_session.open_snapshot_with_score_breakdown(query)
+                } else {
+                    current_session.open_snapshot(query)
+                };
+                if let Some(snapshot) = snapshot {
                     return snapshot;
                 }
             }
@@ -737,7 +774,11 @@ impl PaletteBackend {
 
         match self.build_current_session() {
             Ok(session) => {
-                let snapshot = session.search(query);
+                let snapshot = if include_score_breakdown {
+                    session.search_with_score_breakdown(query)
+                } else {
+                    session.search(query)
+                };
                 if let Ok(mut current_session) = self.session.write() {
                     *current_session = PaletteSessionState::transient(session);
                 }
@@ -1365,6 +1406,42 @@ mod tests {
             result,
             CommandExecutionResultDto::failed("Unknown or stale command id: captured-open")
         );
+    }
+
+    #[test]
+    fn normal_search_payload_omits_debug_score_breakdown() {
+        let backend =
+            PaletteBackend::from_runtime_state(OmniRuntimeState::load(RuntimeStateLoadOptions {
+                bundled_extensions_root: runtime_test_root("normal-search-omits-breakdown"),
+                user_extensions_root: None,
+                dev_config_path: PathBuf::from("missing-dev-config.toml"),
+                runtime_paths: RuntimePaths {
+                    config_path: None,
+                    local_cache_root: None,
+                },
+                current_os: Os::Windows,
+            }));
+
+        backend
+            .open_session(CommandSession::from_commands(vec![test_command(
+                "captured-open",
+                "Captured App: Open",
+                "Ctrl+O",
+                CommandPriority::High,
+                FocusState::Focused,
+                false,
+                &["captured"],
+                0,
+            )]))
+            .expect("captured session should open");
+
+        let normal_snapshot = backend.search_commands("captured");
+        let debug_snapshot = backend.search_commands_with_score_breakdown("captured");
+
+        assert_eq!(normal_snapshot.commands.len(), 1);
+        assert_eq!(debug_snapshot.commands.len(), 1);
+        assert!(normal_snapshot.commands[0].score_breakdown.is_none());
+        assert!(debug_snapshot.commands[0].score_breakdown.is_some());
     }
 
     #[test]
