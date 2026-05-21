@@ -1141,6 +1141,22 @@ describe("palette fixed actions", () => {
     expect(isOpenSettingsCommand("chrome-new-tab")).toBe(false);
   });
 
+  it("caps rendered palette rows to twenty including fixed actions", () => {
+    const manyRows = Array.from({ length: 25 }, (_, index) => ({
+      ...rows[1],
+      id: `command-${index}`,
+      label: `Command ${index}`,
+      original_order: index,
+    }));
+
+    const withFixedActions = paletteRowsWithFixedActions(manyRows);
+
+    expect(withFixedActions).toHaveLength(20);
+    expect(withFixedActions.at(17)?.id).toBe("command-17");
+    expect(withFixedActions.at(18)?.id).toBe(REFRESH_EXTENSIONS_COMMAND_ID);
+    expect(withFixedActions.at(19)?.id).toBe(OPEN_SETTINGS_COMMAND_ID);
+  });
+
   it("refreshes extensions through the runtime reload invoke and preserves the payload", async () => {
     const reloadResult = {
       status: "succeeded" as const,

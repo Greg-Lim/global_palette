@@ -213,6 +213,7 @@ describe("Svelte frontend entrypoint", () => {
     expect(mainWindow).toMatchObject({
       label: "main",
       width: 780,
+      height: 600,
       decorations: false,
       visible: false,
     });

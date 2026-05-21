@@ -486,6 +486,7 @@ export function createPaletteApi(invokeCommand: PaletteInvoke = invoke) {
 export const paletteApi = createPaletteApi();
 export const REFRESH_EXTENSIONS_COMMAND_ID = "fixed-refresh-extensions";
 export const OPEN_SETTINGS_COMMAND_ID = "open-settings";
+export const PALETTE_VISIBLE_ROW_LIMIT = 20;
 
 export function refreshExtensionsCommandRow(): CommandRow {
   return {
@@ -520,7 +521,13 @@ export function openSettingsCommandRow(): CommandRow {
 }
 
 export function paletteRowsWithFixedActions(commands: CommandRow[]): CommandRow[] {
-  return [...commands, refreshExtensionsCommandRow(), openSettingsCommandRow()];
+  const fixedActions = [refreshExtensionsCommandRow(), openSettingsCommandRow()];
+  const commandLimit = Math.max(0, PALETTE_VISIBLE_ROW_LIMIT - fixedActions.length);
+
+  return [...commands.slice(0, commandLimit), ...fixedActions].slice(
+    0,
+    PALETTE_VISIBLE_ROW_LIMIT,
+  );
 }
 
 export function isRefreshExtensionsCommand(commandId: string): boolean {

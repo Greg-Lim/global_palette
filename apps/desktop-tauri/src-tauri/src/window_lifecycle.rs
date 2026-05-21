@@ -13,7 +13,7 @@ use crate::hotkey_bridge::PaletteActivationHandler;
 pub const WINDOW_LIFECYCLE_EVENT_NAME: &str = "omni://palette-window-lifecycle";
 const MAIN_WINDOW_LABEL: &str = "main";
 const PALETTE_WINDOW_WIDTH: u32 = 780;
-const PALETTE_WINDOW_HEIGHT: u32 = 500;
+const PALETTE_WINDOW_HEIGHT: u32 = 600;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowLifecycleStatusDto {
@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn palette_window_size_stays_fixed_for_any_command_count() {
-        let fixed_size = PhysicalSize::new(PALETTE_WINDOW_WIDTH, PALETTE_WINDOW_HEIGHT);
+        let fixed_size = PhysicalSize::new(780, 600);
 
         assert_eq!(palette_window_size(0), fixed_size);
         assert_eq!(palette_window_size(1), fixed_size);
