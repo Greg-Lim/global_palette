@@ -47,6 +47,9 @@ use omni_palette::{
 };
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
+use tauri_plugin_prevent_default::Flags;
+#[cfg(target_os = "windows")]
+use tauri_plugin_prevent_default::PlatformOptions;
 
 use crate::debug_overlay::{
     DebugCommandCandidateDto, DebugDiagnosticsState, DebugOverlay, DebugOverlayStatusDto,
@@ -1500,6 +1503,25 @@ fn handle_persistent_window_close_request<R: tauri::Runtime>(
     }
 }
 
+fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    let builder = tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::all().difference(Flags::FOCUS_MOVE));
+
+    #[cfg(target_os = "windows")]
+    let builder = builder.platform(
+        PlatformOptions::new()
+            .browser_accelerator_keys(false)
+            .default_context_menus(false)
+            .dev_tools(false)
+            .default_script_dialogs(false)
+            .zoom_control(false)
+            .pinch_zoom(false)
+            .swipe_navigation(false),
+    );
+
+    builder.build()
+}
+
 struct ActivationRouter {
     window_lifecycle: Arc<WindowLifecycle>,
     guide_lifecycle: Arc<GuideLifecycle>,
@@ -1542,6 +1564,7 @@ pub fn run() {
     let backend = Arc::new(PaletteBackend::from_runtime_state(runtime_state.clone()));
 
     tauri::Builder::default()
+        .plugin(prevent_default_plugin())
         .on_window_event(handle_persistent_window_close_request)
         .setup(move |app| {
             let window_lifecycle = Arc::new(WindowLifecycle::for_tauri(
@@ -1692,6 +1715,73 @@ mod tests {
             source.contains(".on_window_event(handle_persistent_window_close_request)"),
             "settings/debug close requests should be intercepted so the windows can be reopened"
         );
+    }
+
+    #[test]
+    fn prevent_default_plugin_dependency_enables_windows_platform_options() {
+        let manifest = include_str!("../Cargo.toml");
+
+        assert!(
+            manifest.contains("tauri-plugin-prevent-default"),
+            "the Tauri app should depend on the prevent-default plugin"
+        );
+        assert!(
+            manifest.contains(r#"features = ["platform-windows"]"#),
+            "the Windows platform feature should be enabled for WebView2 settings"
+        );
+    }
+
+    #[test]
+    fn prevent_default_plugin_is_registered_before_setup() {
+        let source = include_str!("lib.rs");
+        let production_source = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("source should include production code before tests");
+
+        let plugin_index = production_source
+            .find(".plugin(prevent_default_plugin())")
+            .expect("prevent-default plugin should be registered on the Tauri builder");
+        let setup_index = production_source
+            .find(".setup(move |app|")
+            .expect("Tauri setup should be present");
+
+        assert!(
+            plugin_index < setup_index,
+            "prevent-default plugin should install its init script before app setup"
+        );
+    }
+
+    #[test]
+    fn prevent_default_plugin_disables_browser_defaults_but_keeps_focus_move() {
+        let source = include_str!("lib.rs");
+        let production_source = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("source should include production code before tests");
+
+        assert!(
+            production_source.contains("fn prevent_default_plugin()"),
+            "prevent-default plugin construction should be centralized for review"
+        );
+        assert!(
+            production_source.contains("Flags::all().difference(Flags::FOCUS_MOVE)"),
+            "all browser-default shortcuts should be blocked except Shift+Tab focus movement"
+        );
+        for option in [
+            ".browser_accelerator_keys(false)",
+            ".default_context_menus(false)",
+            ".dev_tools(false)",
+            ".default_script_dialogs(false)",
+            ".zoom_control(false)",
+            ".pinch_zoom(false)",
+            ".swipe_navigation(false)",
+        ] {
+            assert!(
+                production_source.contains(option),
+                "WebView2 platform option {option} should be disabled"
+            );
+        }
     }
 
     #[test]

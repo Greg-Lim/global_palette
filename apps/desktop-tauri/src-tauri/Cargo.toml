@@ -15,3 +15,4 @@ tauri-build = { version = "2", features = [] }
 omni_palette = { path = "../../.." }
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2", features = [] }
+tauri-plugin-prevent-default = { version = "5", features = ["platform-windows"] }
