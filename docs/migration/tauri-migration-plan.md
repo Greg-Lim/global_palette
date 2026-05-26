@@ -9,16 +9,16 @@
 
 ## Migration Status
 
-- Current migration position: Manual Parity Verification Gate after
-  Phase 7 - Debug Overlay And Diagnostics.
-- Next implementation phase after manual verification: Phase 8 - Cutover And
-  egui Removal.
-- Phase 8 starts only after `docs/migration/tauri-parity-checklist.md` is
-  complete or every remaining gap has a named follow-up migration phase.
+- Current migration position: Phase 7A - Tauri Hotkey Ownership planning.
+- Next implementation phase: Phase 7A - Tauri Hotkey Ownership, documented in
+  `docs/migration/tauri-hotkey-migration-plan.md`.
+- Phase 8 starts only after Phase 7A is complete and
+  `docs/migration/tauri-parity-checklist.md` is complete, or every remaining
+  gap has a named follow-up migration phase.
 - Completed: React-to-Svelte Phases 0-3, Phase 4A, Phase 4B, Phase 4C,
   Phase 4D, Phase 5A, Phase 5B, Phase 6A, Phase 6A.1, Phase 6A.2, and
   Phase 6B, Phase 6C.1, Phase 6C.2, Phase 6C.3, and Phase 7.
-- Last updated: 2026-05-17.
+- Last updated: 2026-05-26.
 - Update this section whenever the migration moves to a new phase.
 
 ## Goal
@@ -494,6 +494,38 @@ Acceptance criteria:
   ignored-app status, and latest palette rows.
 - Debug telemetry remains useful for long-running stability investigations.
 
+### Phase 7A: Tauri Hotkey Ownership
+
+Status: planned.
+
+Plan:
+
+- See `docs/migration/tauri-hotkey-migration-plan.md`.
+
+Purpose:
+
+- Move Tauri shortcut ownership away from the custom Windows guide hotkey path
+  before final cutover.
+
+Scope:
+
+- Use `tauri-plugin-global-shortcut` for Rust-side activation when Omni Palette
+  is hidden or unfocused.
+- Use focused Svelte `keydown` handling for guide mode while the guide WebView
+  is focused.
+- Use `tauri-plugin-prevent-default` to prevent conflicting WebView browser
+  shortcuts from stealing guide-mode input.
+- Keep the existing custom Windows hotkey listener available for egui until
+  Phase 8 removes egui.
+
+Acceptance criteria:
+
+- Tauri uses one global shortcut owner for activation.
+- Guide-mode activation, Escape, and captured shortcuts are handled by the
+  focused guide WebView instead of guide global hotkey registration.
+- Ignored foreground app passthrough still works.
+- Browser defaults no longer steal focused guide-mode shortcuts.
+
 ### Phase 8: Cutover And egui Removal
 
 Purpose:
@@ -533,8 +565,8 @@ Track egui-to-Tauri parity progress in
 `docs/migration/tauri-parity-checklist.md`.
 
 Use that checklist as the manual gate before Phase 8. Phase 8 starts only after
-every required checklist item is marked `Pass` or every remaining gap is
-assigned to a named follow-up migration phase.
+Phase 7A is complete and every required checklist item is marked `Pass`, or
+every remaining gap is assigned to a named follow-up migration phase.
 
 Keep this file as the canonical migration plan; keep
 `docs/migration/tauri-parity-checklist.md` as the live progress tracker for
