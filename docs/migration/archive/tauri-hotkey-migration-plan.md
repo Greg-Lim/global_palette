@@ -1,15 +1,15 @@
-# Tauri Hotkey Migration Plan
+# Archived: Tauri Hotkey Migration Plan
 
-> Documentation-only migration phase. Do not start implementation until this
-> plan is reviewed and accepted.
+> Archived completed migration phase. This plan is retained as historical
+> implementation context for Phase 7A.
 
 ## Migration Status
 
 - Planning branch: `migration/tauri-hotkey`.
-- Current status: plan document first, implementation not started.
+- Current status: complete and archived.
 - Target integration point: before Phase 8 cutover in
   `docs/migration/tauri-migration-plan.md`.
-- Last updated: 2026-05-26.
+- Last updated: 2026-05-27.
 
 ## Problem
 

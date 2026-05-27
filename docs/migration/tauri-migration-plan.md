@@ -9,16 +9,16 @@
 
 ## Migration Status
 
-- Current migration position: Phase 7A - Tauri Hotkey Ownership planning.
-- Next implementation phase: Phase 7A - Tauri Hotkey Ownership, documented in
-  `docs/migration/tauri-hotkey-migration-plan.md`.
-- Phase 8 starts only after Phase 7A is complete and
-  `docs/migration/tauri-parity-checklist.md` is complete, or every remaining
-  gap has a named follow-up migration phase.
+- Current migration position: Manual parity verification gate before Phase 8.
+- Next implementation phase: Complete
+  `docs/migration/tauri-parity-checklist.md`, or assign every remaining gap to
+  a named follow-up migration phase.
+- Phase 8 starts only after `docs/migration/tauri-parity-checklist.md` is
+  complete, or every remaining gap has a named follow-up migration phase.
 - Completed: React-to-Svelte Phases 0-3, Phase 4A, Phase 4B, Phase 4C,
   Phase 4D, Phase 5A, Phase 5B, Phase 6A, Phase 6A.1, Phase 6A.2, and
-  Phase 6B, Phase 6C.1, Phase 6C.2, Phase 6C.3, and Phase 7.
-- Last updated: 2026-05-26.
+  Phase 6B, Phase 6C.1, Phase 6C.2, Phase 6C.3, Phase 7, and Phase 7A.
+- Last updated: 2026-05-27.
 - Update this section whenever the migration moves to a new phase.
 
 ## Goal
@@ -42,7 +42,9 @@ egui app stays runnable until the Tauri version reaches functional parity.
   - `get_window_lifecycle_status`
   - `hide_palette_window`
   - `start_guide`
+  - `complete_guide`
   - `cancel_guide`
+  - `cancel_guide_and_forward_captured_shortcut`
   - `get_guide_status`
   - `get_settings_bootstrap`
   - `save_runtime_settings`
@@ -63,7 +65,7 @@ egui app stays runnable until the Tauri version reaches functional parity.
   palette-only, and Settings renders in a distinct hidden-by-default `settings`
   window.
 - Settings can record, reset, save, and immediately refresh the active Tauri
-  activation shortcut through the existing hotkey listener path.
+  activation shortcut through the Tauri global shortcut path.
 - Settings has egui-style navigation for General, Manage Extensions, and
   Marketplace.
 - Manage Extensions lists bundled and downloaded extensions, supports
@@ -81,6 +83,10 @@ egui app stays runnable until the Tauri version reaches functional parity.
   hidden-by-default `debug` window with foreground context, interaction tags,
   ignored-app status, command candidate counts, palette filter rows, and
   background windows.
+- Tauri activation hotkey ownership now uses `tauri-plugin-global-shortcut`,
+  guide-mode shortcuts are handled by focused Svelte keydown handling, and
+  conflicting WebView browser defaults are blocked through
+  `tauri-plugin-prevent-default`.
 - The existing egui app remains the production UI until final Tauri cutover.
 
 ## Direction
@@ -459,7 +465,7 @@ Completed:
 - Kept debug overlay UI, tray work, styling polish, packaging cutover, and egui
   removal out of scope.
 
-## Remaining Phases
+## Final Migration Phases
 
 
 ### Phase 7: Debug Overlay And Diagnostics
@@ -496,11 +502,11 @@ Acceptance criteria:
 
 ### Phase 7A: Tauri Hotkey Ownership
 
-Status: planned.
+Status: complete.
 
-Plan:
+Archived plan:
 
-- See `docs/migration/tauri-hotkey-migration-plan.md`.
+- See `docs/migration/archive/tauri-hotkey-migration-plan.md`.
 
 Purpose:
 
@@ -518,7 +524,16 @@ Scope:
 - Keep the existing custom Windows hotkey listener available for egui until
   Phase 8 removes egui.
 
-Acceptance criteria:
+Completed:
+
+- Added `tauri-plugin-global-shortcut` for Tauri activation ownership.
+- Added `tauri-plugin-prevent-default` with Windows support for conflicting
+  WebView defaults.
+- Moved guide completion, cancellation, and captured-shortcut forwarding behind
+  focused Guide WebView keydown handling.
+- Kept the old Windows hotkey listener available for egui until Phase 8.
+
+Acceptance criteria met:
 
 - Tauri uses one global shortcut owner for activation.
 - Guide-mode activation, Escape, and captured shortcuts are handled by the
@@ -565,8 +580,8 @@ Track egui-to-Tauri parity progress in
 `docs/migration/tauri-parity-checklist.md`.
 
 Use that checklist as the manual gate before Phase 8. Phase 8 starts only after
-Phase 7A is complete and every required checklist item is marked `Pass`, or
-every remaining gap is assigned to a named follow-up migration phase.
+every required checklist item is marked `Pass`, or every remaining gap is
+assigned to a named follow-up migration phase.
 
 Keep this file as the canonical migration plan; keep
 `docs/migration/tauri-parity-checklist.md` as the live progress tracker for
