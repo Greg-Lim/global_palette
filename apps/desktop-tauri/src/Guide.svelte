@@ -7,6 +7,7 @@
     GUIDE_EVENT_NAME,
     configureRuntimeAppearanceTheme,
     guideShortcutParts,
+    handleGuideKeyboardEvent,
     nextGuideStatus,
     paletteApi,
   } from "./commands";
@@ -71,10 +72,36 @@
       });
   }
 
+  function completeGuide() {
+    paletteApi
+      .completeGuide()
+      .then((status) => {
+        guideStatus = status;
+      })
+      .catch((caught: unknown) => {
+        error = errorMessage(caught);
+      });
+  }
+
+  function forwardCapturedShortcut() {
+    paletteApi
+      .cancelGuideAndForwardCapturedShortcut()
+      .then((status) => {
+        guideStatus = status;
+      })
+      .catch((caught: unknown) => {
+        error = errorMessage(caught);
+      });
+  }
+
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") {
-      event.preventDefault();
+    const action = handleGuideKeyboardEvent(guideStatus, event);
+    if (action === "complete") {
+      completeGuide();
+    } else if (action === "cancel") {
       cancelGuide();
+    } else if (action === "forward_captured") {
+      forwardCapturedShortcut();
     }
   }
 

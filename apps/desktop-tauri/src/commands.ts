@@ -430,6 +430,8 @@ export type GuideStatus = {
   command_label: string | null;
   shortcut_text: string | null;
   activation_hint: string;
+  activation_shortcut: ActivationShortcut;
+  captured_shortcut: ActivationShortcut | null;
   start_count: number;
   complete_count: number;
   cancel_count: number;
@@ -444,6 +446,8 @@ export type GuideEventPayload = {
   command_label: string | null;
   shortcut_text: string | null;
   activation_hint: string;
+  activation_shortcut: ActivationShortcut;
+  captured_shortcut: ActivationShortcut | null;
   start_count: number;
   complete_count: number;
   cancel_count: number;
@@ -452,6 +456,7 @@ export type GuideEventPayload = {
 };
 
 export type PaletteKeyAction = "select_next" | "select_previous" | "execute" | "hide";
+export type GuideKeyAction = "complete" | "cancel" | "forward_captured";
 
 export type PaletteInvoke = <T>(
   command: string,
@@ -471,7 +476,10 @@ export function createPaletteApi(invokeCommand: PaletteInvoke = invoke) {
     hidePaletteWindow: () => invokeCommand<WindowLifecycleStatus>("hide_palette_window"),
     startGuide: (commandId: string) =>
       invokeCommand<GuideStatus>("start_guide", { commandId }),
+    completeGuide: () => invokeCommand<GuideStatus>("complete_guide"),
     cancelGuide: () => invokeCommand<GuideStatus>("cancel_guide"),
+    cancelGuideAndForwardCapturedShortcut: () =>
+      invokeCommand<GuideStatus>("cancel_guide_and_forward_captured_shortcut"),
     getGuideStatus: () => invokeCommand<GuideStatus>("get_guide_status"),
     getSettingsBootstrap: () => invokeCommand<SettingsBootstrap>("get_settings_bootstrap"),
     saveRuntimeSettings: (request: RuntimeSettingsSaveRequest) =>
@@ -1023,6 +1031,8 @@ type KeyboardEventLike = Pick<
   KeyboardEvent,
   "code" | "ctrlKey" | "shiftKey" | "altKey" | "metaKey"
 >;
+type GuideKeyboardEventLike = KeyboardEventLike &
+  Partial<Pick<KeyboardEvent, "preventDefault" | "stopPropagation">>;
 
 const KEY_DISPLAY_NAMES: Record<string, string> = {
   Key0: "0",
@@ -1125,6 +1135,56 @@ export function activationShortcutFromKeyboardEvent(
   };
   shortcut.display_text = formatActivationShortcut(shortcut);
   return shortcut;
+}
+
+export function shortcutsMatch(left: ActivationShortcut, right: ActivationShortcut): boolean {
+  return (
+    left.control === right.control &&
+    left.shift === right.shift &&
+    left.alt === right.alt &&
+    left.win === right.win &&
+    left.key === right.key
+  );
+}
+
+export function guideKeyActionFromKeyboardEvent(
+  status: GuideStatus | null,
+  event: KeyboardEventLike,
+): GuideKeyAction | null {
+  if (!status?.active) {
+    return null;
+  }
+
+  if (event.code === "Escape") {
+    return "cancel";
+  }
+
+  const shortcut = activationShortcutFromKeyboardEvent(event);
+  if (!shortcut) {
+    return null;
+  }
+
+  if (shortcutsMatch(shortcut, status.activation_shortcut)) {
+    return "complete";
+  }
+
+  if (status.captured_shortcut && shortcutsMatch(shortcut, status.captured_shortcut)) {
+    return "forward_captured";
+  }
+
+  return null;
+}
+
+export function handleGuideKeyboardEvent(
+  status: GuideStatus | null,
+  event: GuideKeyboardEventLike,
+): GuideKeyAction | null {
+  const action = guideKeyActionFromKeyboardEvent(status, event);
+  if (action) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+  }
+  return action;
 }
 
 export function formatActivationShortcut(shortcut: ActivationShortcut): string {
@@ -1336,6 +1396,8 @@ export function nextGuideStatus(
     command_label: event.command_label,
     shortcut_text: event.shortcut_text,
     activation_hint: event.activation_hint,
+    activation_shortcut: event.activation_shortcut,
+    captured_shortcut: event.captured_shortcut,
     start_count: event.start_count,
     complete_count: event.complete_count,
     cancel_count: event.cancel_count,

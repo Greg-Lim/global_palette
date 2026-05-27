@@ -14,6 +14,7 @@ import {
   ExtensionMutationResult,
   ExtensionsBootstrap,
   HotkeyStatus,
+  GuideStatus,
   RuntimeStatus,
   RuntimeSettings,
   RuntimeSettingsSaveResult,
@@ -38,6 +39,7 @@ import {
   formatRuntimeStatus,
   formatWindowLifecycleStatus,
   formatDebugOverlayStatus,
+  handleGuideKeyboardEvent,
   guideShortcutParts,
   highlightedLabelSegments,
   filterCatalogEntries,
@@ -120,6 +122,15 @@ const ctrlAltSpaceShortcut: ActivationShortcut = {
   win: false,
   key: "Space",
   display_text: "Ctrl+Alt+Space",
+};
+
+const ctrlTShortcut: ActivationShortcut = {
+  control: true,
+  shift: false,
+  alt: false,
+  win: false,
+  key: "KeyT",
+  display_text: "Ctrl+T",
 };
 
 const runtimeSettings: RuntimeSettings = {
@@ -467,6 +478,8 @@ describe("palette api", () => {
       command_label: "Chrome: New tab",
       shortcut_text: "Ctrl+T",
       activation_hint: "Ctrl+Shift+P",
+      activation_shortcut: defaultActivationShortcut,
+      captured_shortcut: ctrlTShortcut,
       start_count: 1,
       complete_count: 0,
       cancel_count: 0,
@@ -481,11 +494,15 @@ describe("palette api", () => {
     });
 
     expect(await api.startGuide("chrome-new-tab")).toEqual(guideStatus);
+    expect(await api.completeGuide()).toEqual(guideStatus);
     expect(await api.cancelGuide()).toEqual(guideStatus);
+    expect(await api.cancelGuideAndForwardCapturedShortcut()).toEqual(guideStatus);
     expect(await api.getGuideStatus()).toEqual(guideStatus);
     expect(calls).toEqual([
       { command: "start_guide", args: { commandId: "chrome-new-tab" } },
+      { command: "complete_guide", args: undefined },
       { command: "cancel_guide", args: undefined },
+      { command: "cancel_guide_and_forward_captured_shortcut", args: undefined },
       { command: "get_guide_status", args: undefined },
     ]);
   });
@@ -996,6 +1013,8 @@ describe("guide status", () => {
         command_label: "Chrome: New tab",
         shortcut_text: "Ctrl+T",
         activation_hint: "Ctrl+Shift+P",
+        activation_shortcut: defaultActivationShortcut,
+        captured_shortcut: ctrlTShortcut,
         start_count: 1,
         complete_count: 0,
         cancel_count: 0,
@@ -1013,6 +1032,8 @@ describe("guide status", () => {
       command_label: null,
       shortcut_text: null,
       activation_hint: "Ctrl+Shift+P",
+      activation_shortcut: defaultActivationShortcut,
+      captured_shortcut: null,
       start_count: 1,
       complete_count: 0,
       cancel_count: 1,
@@ -1025,6 +1046,8 @@ describe("guide status", () => {
       command_label: null,
       shortcut_text: null,
       activation_hint: "Ctrl+Shift+P",
+      activation_shortcut: defaultActivationShortcut,
+      captured_shortcut: null,
       start_count: 1,
       complete_count: 0,
       cancel_count: 1,
@@ -1032,6 +1055,68 @@ describe("guide status", () => {
       last_action: "cancelled",
       last_error: null,
     });
+  });
+});
+
+describe("guide keyboard handling", () => {
+  const activeGuideStatus: GuideStatus = {
+    active: true,
+    command_label: "Chrome: New tab",
+    shortcut_text: "Ctrl+T",
+    activation_hint: "Ctrl+Shift+P",
+    activation_shortcut: defaultActivationShortcut,
+    captured_shortcut: ctrlTShortcut,
+    start_count: 1,
+    complete_count: 0,
+    cancel_count: 0,
+    expire_count: 0,
+    last_action: "started",
+    last_error: null,
+  };
+
+  function keyboardEvent(
+    code: string,
+    modifiers: Partial<Pick<KeyboardEvent, "ctrlKey" | "shiftKey" | "altKey" | "metaKey">> = {},
+  ) {
+    const calls: string[] = [];
+    const event = {
+      code,
+      ctrlKey: modifiers.ctrlKey ?? false,
+      shiftKey: modifiers.shiftKey ?? false,
+      altKey: modifiers.altKey ?? false,
+      metaKey: modifiers.metaKey ?? false,
+      preventDefault: () => calls.push("preventDefault"),
+      stopPropagation: () => calls.push("stopPropagation"),
+    };
+    return { event, calls };
+  }
+
+  it("completes the guide for the configured activation shortcut", () => {
+    const { event, calls } = keyboardEvent("KeyP", { ctrlKey: true, shiftKey: true });
+
+    expect(handleGuideKeyboardEvent(activeGuideStatus, event)).toBe("complete");
+    expect(calls).toEqual(["preventDefault", "stopPropagation"]);
+  });
+
+  it("cancels the guide for Escape", () => {
+    const { event, calls } = keyboardEvent("Escape", { altKey: true });
+
+    expect(handleGuideKeyboardEvent(activeGuideStatus, event)).toBe("cancel");
+    expect(calls).toEqual(["preventDefault", "stopPropagation"]);
+  });
+
+  it("cancels and forwards the captured command shortcut", () => {
+    const { event, calls } = keyboardEvent("KeyT", { ctrlKey: true });
+
+    expect(handleGuideKeyboardEvent(activeGuideStatus, event)).toBe("forward_captured");
+    expect(calls).toEqual(["preventDefault", "stopPropagation"]);
+  });
+
+  it("ignores unrelated keys so normal editing shortcuts keep working", () => {
+    const { event, calls } = keyboardEvent("KeyC", { ctrlKey: true });
+
+    expect(handleGuideKeyboardEvent(activeGuideStatus, event)).toBeNull();
+    expect(calls).toEqual([]);
   });
 });
 

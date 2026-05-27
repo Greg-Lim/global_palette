@@ -1,22 +1,23 @@
-use std::{
-    sync::{mpsc::Receiver, Arc, Mutex},
-    thread::{self, JoinHandle},
-};
+use std::sync::{Arc, Mutex};
 
 use omni_palette::{
     domain::{
         action::ContextRoot,
-        hotkey::{HotkeyModifiers, Key, KeyboardShortcut},
+        hotkey::{Key, KeyboardShortcut},
     },
     runtime_state::OmniRuntimeState,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_global_shortcut::{
+    Code as GlobalShortcutCode, GlobalShortcutExt, Modifiers as GlobalShortcutModifiers,
+    Shortcut as GlobalShortcut, ShortcutEvent, ShortcutState,
+};
 
 #[cfg(target_os = "windows")]
 use omni_palette::platform::{
-    hotkey_actions::{start_hotkey_listener, HotkeyHandle, HotkeyPassthrough},
     platform_interface::{get_all_context, RawWindowHandleExt},
+    windows::sender::hotkey_sender::send_shortcut,
 };
 
 pub const HOTKEY_EVENT_NAME: &str = "omni://palette-activation-requested";
@@ -144,6 +145,7 @@ impl HotkeyStatusStore {
 
     fn record_error(&self, message: String) -> HotkeyEventPayloadDto {
         let mut state = self.inner.lock().expect("hotkey status should lock");
+        state.running = false;
         state.last_error = Some(message.clone());
         let payload = HotkeyEventPayloadDto {
             kind: HotkeyEventKindDto::ListenerError,
@@ -156,14 +158,6 @@ impl HotkeyStatusStore {
         state.last_event = Some(payload.clone());
         payload
     }
-
-    fn record_stopped_error(&self, message: String) -> HotkeyEventPayloadDto {
-        {
-            let mut state = self.inner.lock().expect("hotkey status should lock");
-            state.running = false;
-        }
-        self.record_error(message)
-    }
 }
 
 trait HotkeyEventSink: Send + Sync {
@@ -173,12 +167,6 @@ trait HotkeyEventSink: Send + Sync {
 pub trait PaletteActivationHandler: Send + Sync {
     fn handle_palette_activation(&self, context: ContextRoot);
     fn handle_guide_activation(&self) -> bool {
-        false
-    }
-    fn handle_guide_cancel(&self, _shortcut: KeyboardShortcut) -> bool {
-        false
-    }
-    fn handle_guide_shortcut(&self, _shortcut: KeyboardShortcut) -> bool {
         false
     }
 }
@@ -201,51 +189,55 @@ impl HotkeyEventSink for TauriHotkeyEventSink {
     }
 }
 
+trait GlobalShortcutRegistrar: Send + Sync {
+    fn register_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String>;
+    fn unregister_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String>;
+}
+
+struct TauriGlobalShortcutRegistrar {
+    app: AppHandle,
+}
+
+impl TauriGlobalShortcutRegistrar {
+    fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl GlobalShortcutRegistrar for TauriGlobalShortcutRegistrar {
+    fn register_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
+        self.app
+            .global_shortcut()
+            .register(global_shortcut_from_keyboard_shortcut(shortcut))
+            .map_err(|err| format!("Failed to register activation shortcut {shortcut}: {err}"))
+    }
+
+    fn unregister_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
+        self.app
+            .global_shortcut()
+            .unregister(global_shortcut_from_keyboard_shortcut(shortcut))
+            .map_err(|err| format!("Failed to unregister activation shortcut {shortcut}: {err}"))
+    }
+}
+
 trait HotkeyForwarder: Send + Sync {
     fn forward_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String>;
-    fn update_activation_shortcut(&self, _shortcut: KeyboardShortcut) -> Result<(), String> {
-        Ok(())
-    }
-    fn forward_guide_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
-        self.forward_shortcut(shortcut)
-    }
-    fn set_guide_cancel_hotkey(&self, _enabled: bool) -> Result<(), String> {
-        Ok(())
-    }
-    fn set_guide_shortcut_hotkey(&self, _shortcut: Option<KeyboardShortcut>) -> Result<(), String> {
-        Ok(())
-    }
 }
 
-#[cfg(target_os = "windows")]
-struct WindowsHotkeyForwarder {
-    passthrough: HotkeyPassthrough,
-}
+struct PlatformHotkeyForwarder;
 
-#[cfg(target_os = "windows")]
-impl HotkeyForwarder for WindowsHotkeyForwarder {
+impl HotkeyForwarder for PlatformHotkeyForwarder {
     fn forward_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
-        self.passthrough.forward_shortcut(shortcut);
-        Ok(())
-    }
-
-    fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
-        self.passthrough.update_shortcut(shortcut)
-    }
-
-    fn forward_guide_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
-        self.passthrough.forward_guide_shortcut(shortcut);
-        Ok(())
-    }
-
-    fn set_guide_cancel_hotkey(&self, enabled: bool) -> Result<(), String> {
-        self.passthrough.set_guide_cancel_hotkey(enabled);
-        Ok(())
-    }
-
-    fn set_guide_shortcut_hotkey(&self, shortcut: Option<KeyboardShortcut>) -> Result<(), String> {
-        self.passthrough.set_guide_shortcut_hotkey(shortcut);
-        Ok(())
+        #[cfg(target_os = "windows")]
+        {
+            send_shortcut(&shortcut);
+            Ok(())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = shortcut;
+            Err("Hotkey passthrough is only supported on Windows".to_string())
+        }
     }
 }
 
@@ -275,28 +267,32 @@ impl ActiveProcessProvider for WindowsActiveProcessProvider {
     }
 }
 
-trait StoppableHotkeyListener: Send {
-    fn stop(self: Box<Self>);
-}
+#[cfg(not(target_os = "windows"))]
+struct EmptyActiveProcessProvider;
 
-#[cfg(target_os = "windows")]
-struct WindowsHotkeyListenerHandle {
-    handle: HotkeyHandle,
-}
-
-#[cfg(target_os = "windows")]
-impl StoppableHotkeyListener for WindowsHotkeyListenerHandle {
-    fn stop(self: Box<Self>) {
-        self.handle.stop();
+#[cfg(not(target_os = "windows"))]
+impl ActiveProcessProvider for EmptyActiveProcessProvider {
+    fn active_window_context(&self) -> ActiveWindowContext {
+        ActiveWindowContext {
+            context: ContextRoot {
+                fg_context: Vec::new(),
+                bg_context: Vec::new(),
+                active_interaction: Default::default(),
+            },
+            process_name: None,
+        }
     }
 }
 
 pub struct HotkeyBridge {
     status: HotkeyStatusStore,
     activation_shortcut: Mutex<KeyboardShortcut>,
-    forwarder: Option<Arc<dyn HotkeyForwarder>>,
-    handle: Mutex<Option<Box<dyn StoppableHotkeyListener>>>,
-    bridge_thread: Mutex<Option<JoinHandle<()>>>,
+    registrar: Arc<dyn GlobalShortcutRegistrar>,
+    forwarder: Arc<dyn HotkeyForwarder>,
+    runtime_state: OmniRuntimeState,
+    event_sink: Arc<dyn HotkeyEventSink>,
+    activation_handler: Arc<dyn PaletteActivationHandler>,
+    active_process_provider: Arc<dyn ActiveProcessProvider>,
 }
 
 impl HotkeyBridge {
@@ -305,105 +301,50 @@ impl HotkeyBridge {
         app: AppHandle,
         activation_handler: Arc<dyn PaletteActivationHandler>,
     ) -> Self {
-        let activation_shortcut = runtime_state.config().activation;
-        let activation_hint = activation_shortcut.to_string();
-
         #[cfg(target_os = "windows")]
-        {
-            let start_result =
-                std::panic::catch_unwind(|| start_hotkey_listener(activation_shortcut))
-                    .map_err(|_| "Hotkey listener panicked during startup".to_string());
-
-            match start_result {
-                Ok((handle, rx)) => {
-                    let forwarder = Arc::new(WindowsHotkeyForwarder {
-                        passthrough: handle.passthrough_sender(),
-                    });
-                    let listener_handle = Box::new(WindowsHotkeyListenerHandle { handle });
-                    Self::from_started(
-                        activation_hint,
-                        listener_handle,
-                        rx,
-                        runtime_state,
-                        forwarder,
-                        Arc::new(TauriHotkeyEventSink::new(app)),
-                        activation_handler,
-                        Arc::new(WindowsActiveProcessProvider),
-                    )
-                }
-                Err(err) => Self::failed(activation_shortcut, activation_hint, err),
-            }
-        }
-
+        let active_process_provider: Arc<dyn ActiveProcessProvider> =
+            Arc::new(WindowsActiveProcessProvider);
         #[cfg(not(target_os = "windows"))]
-        {
-            let _ = (runtime_state, app, activation_handler);
-            Self::failed(
-                activation_shortcut,
-                activation_hint,
-                "Global hotkey listener is only available on Windows".to_string(),
-            )
-        }
+        let active_process_provider: Arc<dyn ActiveProcessProvider> =
+            Arc::new(EmptyActiveProcessProvider);
+
+        Self::with_components(
+            runtime_state,
+            Arc::new(TauriGlobalShortcutRegistrar::new(app.clone())),
+            Arc::new(PlatformHotkeyForwarder),
+            Arc::new(TauriHotkeyEventSink::new(app)),
+            activation_handler,
+            active_process_provider,
+        )
     }
 
-    fn from_started(
-        activation_hint: String,
-        handle: Box<dyn StoppableHotkeyListener>,
-        rx: Receiver<KeyboardShortcut>,
+    fn with_components(
         runtime_state: OmniRuntimeState,
+        registrar: Arc<dyn GlobalShortcutRegistrar>,
         forwarder: Arc<dyn HotkeyForwarder>,
         event_sink: Arc<dyn HotkeyEventSink>,
         activation_handler: Arc<dyn PaletteActivationHandler>,
         active_process_provider: Arc<dyn ActiveProcessProvider>,
     ) -> Self {
-        let status = HotkeyStatusStore::new(activation_hint);
-        status.record_running();
         let activation_shortcut = runtime_state.config().activation;
-        let loop_status = status.clone();
-        let loop_forwarder = Arc::clone(&forwarder);
-        let loop_event_sink = Arc::clone(&event_sink);
-        let loop_activation_handler = Arc::clone(&activation_handler);
+        let activation_hint = activation_shortcut.to_string();
+        let status = HotkeyStatusStore::new(activation_hint.clone());
 
-        let bridge_thread = thread::spawn(move || {
-            while let Ok(shortcut) = rx.recv() {
-                let active_context = active_process_provider.active_window_context();
-                handle_hotkey_event(
-                    shortcut,
-                    &runtime_state,
-                    active_context,
-                    Arc::clone(&loop_forwarder),
-                    Arc::clone(&loop_event_sink),
-                    Arc::clone(&loop_activation_handler),
-                    &loop_status,
-                );
-            }
-
-            let payload = loop_status.record_stopped_error("Hotkey listener stopped".to_string());
-            let _ = loop_event_sink.emit_hotkey_event(payload);
-        });
-
-        Self {
-            status,
-            activation_shortcut: Mutex::new(activation_shortcut),
-            forwarder: Some(forwarder),
-            handle: Mutex::new(Some(handle)),
-            bridge_thread: Mutex::new(Some(bridge_thread)),
+        if let Err(err) = registrar.register_activation_shortcut(activation_shortcut) {
+            status.record_error(err);
+        } else {
+            status.record_running();
         }
-    }
 
-    fn failed(
-        activation_shortcut: KeyboardShortcut,
-        activation_hint: String,
-        message: String,
-    ) -> Self {
-        let status = HotkeyStatusStore::new(activation_hint);
-        status.record_error(message);
         Self {
             status,
             activation_shortcut: Mutex::new(activation_shortcut),
-            forwarder: None,
-            handle: Mutex::new(None),
-            bridge_thread: Mutex::new(None),
+            registrar,
+            forwarder,
+            runtime_state,
+            event_sink,
+            activation_handler,
+            active_process_provider,
         }
     }
 
@@ -412,98 +353,77 @@ impl HotkeyBridge {
     }
 
     pub fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
-        let Some(forwarder) = &self.forwarder else {
-            return Err("Global hotkey listener is not running".to_string());
-        };
-
-        forwarder.update_activation_shortcut(shortcut)?;
-        *self
-            .activation_shortcut
-            .lock()
-            .expect("activation shortcut should lock") = shortcut;
-        self.status.update_activation_hint(shortcut.to_string());
-        Ok(())
-    }
-
-    pub fn enable_guide_hotkeys(
-        &self,
-        captured_shortcut: Option<KeyboardShortcut>,
-    ) -> Result<(), String> {
-        let Some(forwarder) = &self.forwarder else {
-            return Ok(());
-        };
-        let activation_shortcut = *self
+        let mut active_shortcut = self
             .activation_shortcut
             .lock()
             .expect("activation shortcut should lock");
-        let captured_shortcut =
-            captured_shortcut.filter(|shortcut| *shortcut != activation_shortcut);
-        forwarder.set_guide_cancel_hotkey(true)?;
-        forwarder.set_guide_shortcut_hotkey(captured_shortcut)
-    }
-
-    pub fn clear_guide_hotkeys(&self) -> Result<(), String> {
-        let Some(forwarder) = &self.forwarder else {
+        let previous_shortcut = *active_shortcut;
+        if previous_shortcut == shortcut {
             return Ok(());
-        };
-        forwarder.set_guide_shortcut_hotkey(None)?;
-        forwarder.set_guide_cancel_hotkey(false)
+        }
+
+        if let Err(err) = self
+            .registrar
+            .unregister_activation_shortcut(previous_shortcut)
+        {
+            let message = format!("Could not unregister previous activation shortcut: {err}");
+            self.status.record_error(message.clone());
+            return Err(message);
+        }
+
+        if let Err(err) = self.registrar.register_activation_shortcut(shortcut) {
+            let rollback_result = self
+                .registrar
+                .register_activation_shortcut(previous_shortcut);
+            let message = match rollback_result {
+                Ok(()) => {
+                    format!("Could not register activation shortcut {shortcut}; restored previous shortcut {previous_shortcut}: {err}")
+                }
+                Err(rollback_err) => {
+                    format!("Could not register activation shortcut {shortcut}: {err}; additionally failed to restore previous shortcut {previous_shortcut}: {rollback_err}")
+                }
+            };
+            self.status.record_error(message.clone());
+            return Err(message);
+        }
+
+        *active_shortcut = shortcut;
+        self.status.update_activation_hint(shortcut.to_string());
+        self.status.record_running();
+        Ok(())
+    }
+
+    pub fn handle_global_shortcut_event(&self, event: ShortcutEvent) {
+        if event.state() != ShortcutState::Pressed {
+            return;
+        }
+        let shortcut = *self
+            .activation_shortcut
+            .lock()
+            .expect("activation shortcut should lock");
+        let active_context = self.active_process_provider.active_window_context();
+        handle_hotkey_event(
+            shortcut,
+            &self.runtime_state,
+            active_context,
+            self.forwarder.as_ref(),
+            self.event_sink.as_ref(),
+            self.activation_handler.as_ref(),
+            &self.status,
+        );
     }
 }
 
-impl Drop for HotkeyBridge {
-    fn drop(&mut self) {
-        if let Some(handle) = self
-            .handle
-            .lock()
-            .expect("hotkey handle should lock")
-            .take()
-        {
-            handle.stop();
-        }
-
-        if let Some(thread) = self
-            .bridge_thread
-            .lock()
-            .expect("hotkey bridge thread should lock")
-            .take()
-        {
-            let _ = thread.join();
-        }
-    }
-}
-
-fn handle_hotkey_event<F, E>(
+fn handle_hotkey_event(
     shortcut: KeyboardShortcut,
     runtime_state: &OmniRuntimeState,
     active_context: ActiveWindowContext,
-    forwarder: Arc<F>,
-    event_sink: Arc<E>,
-    activation_handler: Arc<dyn PaletteActivationHandler>,
+    forwarder: &dyn HotkeyForwarder,
+    event_sink: &dyn HotkeyEventSink,
+    activation_handler: &dyn PaletteActivationHandler,
     status: &HotkeyStatusStore,
-) where
-    F: HotkeyForwarder + ?Sized,
-    E: HotkeyEventSink + ?Sized,
-{
-    if is_guide_cancel_shortcut(shortcut) && activation_handler.handle_guide_cancel(shortcut) {
-        let _ = forwarder.set_guide_shortcut_hotkey(None);
-        let _ = forwarder.set_guide_cancel_hotkey(false);
-        return;
-    }
-
-    if activation_handler.handle_guide_shortcut(shortcut) {
-        let _ = forwarder.set_guide_shortcut_hotkey(None);
-        let _ = forwarder.set_guide_cancel_hotkey(false);
-        if let Err(err) = forwarder.forward_guide_shortcut(shortcut) {
-            let payload = status.record_error(format!("Failed to forward guide shortcut: {err}"));
-            let _ = event_sink.emit_hotkey_event(payload);
-        }
-        return;
-    }
-
+) {
     if activation_handler.handle_guide_activation() {
-        let _ = forwarder.set_guide_shortcut_hotkey(None);
-        let _ = forwarder.set_guide_cancel_hotkey(false);
         return;
     }
 
@@ -529,22 +449,118 @@ fn handle_hotkey_event<F, E>(
     }
 }
 
-fn is_guide_cancel_shortcut(shortcut: KeyboardShortcut) -> bool {
-    shortcut.modifier == HotkeyModifiers::default() && shortcut.key == Key::Escape
+fn global_shortcut_from_keyboard_shortcut(shortcut: KeyboardShortcut) -> GlobalShortcut {
+    let mut modifiers = GlobalShortcutModifiers::empty();
+    if shortcut.modifier.control {
+        modifiers.insert(GlobalShortcutModifiers::CONTROL);
+    }
+    if shortcut.modifier.shift {
+        modifiers.insert(GlobalShortcutModifiers::SHIFT);
+    }
+    if shortcut.modifier.alt {
+        modifiers.insert(GlobalShortcutModifiers::ALT);
+    }
+    if shortcut.modifier.win {
+        modifiers.insert(GlobalShortcutModifiers::SUPER);
+    }
+
+    GlobalShortcut::new(Some(modifiers), global_shortcut_code(shortcut.key))
+}
+
+fn global_shortcut_code(key: Key) -> GlobalShortcutCode {
+    match key {
+        Key::KeyA => GlobalShortcutCode::KeyA,
+        Key::KeyB => GlobalShortcutCode::KeyB,
+        Key::KeyC => GlobalShortcutCode::KeyC,
+        Key::KeyD => GlobalShortcutCode::KeyD,
+        Key::KeyE => GlobalShortcutCode::KeyE,
+        Key::KeyF => GlobalShortcutCode::KeyF,
+        Key::KeyG => GlobalShortcutCode::KeyG,
+        Key::KeyH => GlobalShortcutCode::KeyH,
+        Key::KeyI => GlobalShortcutCode::KeyI,
+        Key::KeyJ => GlobalShortcutCode::KeyJ,
+        Key::KeyK => GlobalShortcutCode::KeyK,
+        Key::KeyL => GlobalShortcutCode::KeyL,
+        Key::KeyM => GlobalShortcutCode::KeyM,
+        Key::KeyN => GlobalShortcutCode::KeyN,
+        Key::KeyO => GlobalShortcutCode::KeyO,
+        Key::KeyP => GlobalShortcutCode::KeyP,
+        Key::KeyQ => GlobalShortcutCode::KeyQ,
+        Key::KeyR => GlobalShortcutCode::KeyR,
+        Key::KeyS => GlobalShortcutCode::KeyS,
+        Key::KeyT => GlobalShortcutCode::KeyT,
+        Key::KeyU => GlobalShortcutCode::KeyU,
+        Key::KeyV => GlobalShortcutCode::KeyV,
+        Key::KeyW => GlobalShortcutCode::KeyW,
+        Key::KeyX => GlobalShortcutCode::KeyX,
+        Key::KeyY => GlobalShortcutCode::KeyY,
+        Key::KeyZ => GlobalShortcutCode::KeyZ,
+        Key::Key0 => GlobalShortcutCode::Digit0,
+        Key::Key1 => GlobalShortcutCode::Digit1,
+        Key::Key2 => GlobalShortcutCode::Digit2,
+        Key::Key3 => GlobalShortcutCode::Digit3,
+        Key::Key4 => GlobalShortcutCode::Digit4,
+        Key::Key5 => GlobalShortcutCode::Digit5,
+        Key::Key6 => GlobalShortcutCode::Digit6,
+        Key::Key7 => GlobalShortcutCode::Digit7,
+        Key::Key8 => GlobalShortcutCode::Digit8,
+        Key::Key9 => GlobalShortcutCode::Digit9,
+        Key::F1 => GlobalShortcutCode::F1,
+        Key::F2 => GlobalShortcutCode::F2,
+        Key::F3 => GlobalShortcutCode::F3,
+        Key::F4 => GlobalShortcutCode::F4,
+        Key::F5 => GlobalShortcutCode::F5,
+        Key::F6 => GlobalShortcutCode::F6,
+        Key::F7 => GlobalShortcutCode::F7,
+        Key::F8 => GlobalShortcutCode::F8,
+        Key::F9 => GlobalShortcutCode::F9,
+        Key::F10 => GlobalShortcutCode::F10,
+        Key::F11 => GlobalShortcutCode::F11,
+        Key::F12 => GlobalShortcutCode::F12,
+        Key::Semicolon => GlobalShortcutCode::Semicolon,
+        Key::Equal => GlobalShortcutCode::Equal,
+        Key::Comma => GlobalShortcutCode::Comma,
+        Key::Minus => GlobalShortcutCode::Minus,
+        Key::Period => GlobalShortcutCode::Period,
+        Key::Slash => GlobalShortcutCode::Slash,
+        Key::Grave => GlobalShortcutCode::Backquote,
+        Key::LeftBracket => GlobalShortcutCode::BracketLeft,
+        Key::Backslash => GlobalShortcutCode::Backslash,
+        Key::RightBracket => GlobalShortcutCode::BracketRight,
+        Key::Apostrophe => GlobalShortcutCode::Quote,
+        Key::Enter => GlobalShortcutCode::Enter,
+        Key::Space => GlobalShortcutCode::Space,
+        Key::Tab => GlobalShortcutCode::Tab,
+        Key::Escape => GlobalShortcutCode::Escape,
+        Key::Delete => GlobalShortcutCode::Delete,
+        Key::BackSpace => GlobalShortcutCode::Backspace,
+        Key::Home => GlobalShortcutCode::Home,
+        Key::End => GlobalShortcutCode::End,
+        Key::PageUp => GlobalShortcutCode::PageUp,
+        Key::PageDown => GlobalShortcutCode::PageDown,
+        Key::Insert => GlobalShortcutCode::Insert,
+        Key::PrintScreen => GlobalShortcutCode::PrintScreen,
+        Key::ScrollLock => GlobalShortcutCode::ScrollLock,
+        Key::Pause => GlobalShortcutCode::Pause,
+        Key::LeftArrow => GlobalShortcutCode::ArrowLeft,
+        Key::RightArrow => GlobalShortcutCode::ArrowRight,
+        Key::UpArrow => GlobalShortcutCode::ArrowUp,
+        Key::DownArrow => GlobalShortcutCode::ArrowDown,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
         path::PathBuf,
-        sync::{mpsc, Arc, Mutex},
+        sync::{Arc, Mutex},
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use omni_palette::{
-        config::runtime::RuntimePaths,
+        config::runtime::{RuntimeConfig, RuntimePaths},
         domain::{
-            action::Os,
+            action::{Os, ContextRoot},
             hotkey::{HotkeyModifiers, Key, KeyboardShortcut},
         },
         runtime_state::{OmniRuntimeState, RuntimeStateLoadOptions},
@@ -570,12 +586,33 @@ mod tests {
     }
 
     #[test]
-    fn starting_bridge_records_listener_running_status() {
-        let status = HotkeyStatusStore::new("Ctrl+Shift+P".to_string());
+    fn starting_bridge_registers_activation_shortcut_and_records_running_status() {
+        let runtime = runtime_with_ignored_processes(&[]);
+        let registrar = Arc::new(RecordingGlobalShortcutRegistrar::default());
+        let bridge = bridge_with_components(runtime, registrar.clone());
 
-        status.record_running();
+        assert!(bridge.status().running);
+        assert_eq!(registrar.calls(), vec!["register:Ctrl+Shift+P"]);
+    }
 
-        assert!(status.snapshot().running);
+    #[test]
+    fn listener_startup_failure_records_controlled_error() {
+        let bridge = HotkeyBridge::with_components(
+            runtime_with_ignored_processes(&[]),
+            Arc::new(RecordingGlobalShortcutRegistrar::failing_register(
+                "register failed",
+            )),
+            Arc::new(RecordingForwarder::default()),
+            Arc::new(RecordingEventSink::default()),
+            Arc::new(RecordingActivationHandler::default()),
+            Arc::new(RecordingActiveProcessProvider::default()),
+        );
+
+        assert_eq!(bridge.status().running, false);
+        assert_eq!(
+            bridge.status().last_error,
+            Some("register failed".to_string())
+        );
     }
 
     #[test]
@@ -583,11 +620,9 @@ mod tests {
         let runtime = runtime_with_ignored_processes(&["code.exe"]);
         let status = HotkeyStatusStore::new("Ctrl+Shift+P".to_string());
         status.record_running();
-        let sink = Arc::new(RecordingEventSink::default());
-        let forwarder = Arc::new(RecordingForwarder::default());
-        let activation_handler = Arc::new(RecordingActivationHandler::default());
-        let activation_handler_trait: Arc<dyn PaletteActivationHandler> =
-            activation_handler.clone();
+        let sink = RecordingEventSink::default();
+        let forwarder = RecordingForwarder::default();
+        let activation_handler = RecordingActivationHandler::default();
         let shortcut = activation_shortcut();
 
         handle_hotkey_event(
@@ -597,9 +632,9 @@ mod tests {
                 context: empty_context(),
                 process_name: Some("notepad.exe".to_string()),
             },
-            Arc::clone(&forwarder),
-            Arc::clone(&sink),
-            activation_handler_trait,
+            &forwarder,
+            &sink,
+            &activation_handler,
             &status,
         );
 
@@ -626,11 +661,9 @@ mod tests {
         let runtime = runtime_with_ignored_processes(&["code.exe"]);
         let status = HotkeyStatusStore::new("Ctrl+Shift+P".to_string());
         status.record_running();
-        let sink = Arc::new(RecordingEventSink::default());
-        let forwarder = Arc::new(RecordingForwarder::default());
-        let activation_handler = Arc::new(RecordingActivationHandler::default());
-        let activation_handler_trait: Arc<dyn PaletteActivationHandler> =
-            activation_handler.clone();
+        let sink = RecordingEventSink::default();
+        let forwarder = RecordingForwarder::default();
+        let activation_handler = RecordingActivationHandler::default();
         let shortcut = activation_shortcut();
 
         handle_hotkey_event(
@@ -640,9 +673,9 @@ mod tests {
                 context: empty_context(),
                 process_name: Some("Code.exe".to_string()),
             },
-            Arc::clone(&forwarder),
-            Arc::clone(&sink),
-            activation_handler_trait,
+            &forwarder,
+            &sink,
+            &activation_handler,
             &status,
         );
 
@@ -672,11 +705,9 @@ mod tests {
         let runtime = runtime_with_ignored_processes(&[]);
         let status = HotkeyStatusStore::new("Ctrl+Shift+P".to_string());
         status.record_running();
-        let sink = Arc::new(RecordingEventSink::default());
-        let forwarder = Arc::new(RecordingForwarder::default());
-        let activation_handler = Arc::new(RecordingActivationHandler::with_guide_activation());
-        let activation_handler_trait: Arc<dyn PaletteActivationHandler> =
-            activation_handler.clone();
+        let sink = RecordingEventSink::default();
+        let forwarder = RecordingForwarder::default();
+        let activation_handler = RecordingActivationHandler::with_guide_activation();
 
         handle_hotkey_event(
             activation_shortcut(),
@@ -685,152 +716,89 @@ mod tests {
                 context: empty_context(),
                 process_name: Some("notepad.exe".to_string()),
             },
-            Arc::clone(&forwarder),
-            Arc::clone(&sink),
-            activation_handler_trait,
+            &forwarder,
+            &sink,
+            &activation_handler,
             &status,
         );
 
         assert_eq!(activation_handler.guide_activation_count(), 1);
         assert_eq!(activation_handler.activation_count(), 0);
         assert_eq!(status.snapshot().activation_count, 0);
-        assert_eq!(
-            forwarder.guide_control_calls(),
-            vec!["set_guide_shortcut:none", "set_guide_cancel:false"]
-        );
         assert_eq!(sink.events(), Vec::new());
     }
 
     #[test]
-    fn captured_guide_shortcut_cancels_guide_and_forwards_shortcut() {
+    fn updating_activation_shortcut_unregisters_old_and_registers_new_shortcut() {
         let runtime = runtime_with_ignored_processes(&[]);
-        let status = HotkeyStatusStore::new("Ctrl+Shift+P".to_string());
-        status.record_running();
-        let sink = Arc::new(RecordingEventSink::default());
-        let forwarder = Arc::new(RecordingForwarder::default());
-        let activation_handler = Arc::new(RecordingActivationHandler::with_guide_shortcut());
-        let activation_handler_trait: Arc<dyn PaletteActivationHandler> =
-            activation_handler.clone();
-        let shortcut = ctrl_t_shortcut();
+        let registrar = Arc::new(RecordingGlobalShortcutRegistrar::default());
+        let bridge = bridge_with_components(runtime, registrar.clone());
 
-        handle_hotkey_event(
-            shortcut,
-            &runtime,
-            ActiveWindowContext {
-                context: empty_context(),
-                process_name: Some("notepad.exe".to_string()),
-            },
-            Arc::clone(&forwarder),
-            Arc::clone(&sink),
-            activation_handler_trait,
-            &status,
-        );
+        bridge
+            .update_activation_shortcut(ctrl_alt_space_shortcut())
+            .expect("activation shortcut should update");
 
-        assert_eq!(activation_handler.guide_shortcut_count(), 1);
+        assert_eq!(bridge.status().activation_hint, "Ctrl+Alt+Space");
+        assert!(bridge.status().running);
         assert_eq!(
-            forwarder.guide_control_calls(),
+            registrar.calls(),
             vec![
-                "set_guide_shortcut:none",
-                "set_guide_cancel:false",
-                "forward_guide:Ctrl+T",
+                "register:Ctrl+Shift+P",
+                "unregister:Ctrl+Shift+P",
+                "register:Ctrl+Alt+Space",
             ]
         );
-        assert_eq!(status.snapshot().activation_count, 0);
-        assert_eq!(sink.events(), Vec::new());
     }
 
     #[test]
-    fn guide_escape_cancels_without_forwarding() {
+    fn failed_activation_update_restores_previous_registration_and_reports_failure() {
         let runtime = runtime_with_ignored_processes(&[]);
-        let status = HotkeyStatusStore::new("Ctrl+Shift+P".to_string());
-        status.record_running();
-        let sink = Arc::new(RecordingEventSink::default());
-        let forwarder = Arc::new(RecordingForwarder::default());
-        let activation_handler = Arc::new(RecordingActivationHandler::with_guide_cancel());
-        let activation_handler_trait: Arc<dyn PaletteActivationHandler> =
-            activation_handler.clone();
+        let registrar = Arc::new(RecordingGlobalShortcutRegistrar::failing_for_shortcut(
+            ctrl_alt_space_shortcut(),
+            "shortcut unavailable",
+        ));
+        let bridge = bridge_with_components(runtime, registrar.clone());
 
-        handle_hotkey_event(
-            escape_shortcut(),
-            &runtime,
-            ActiveWindowContext {
-                context: empty_context(),
-                process_name: Some("notepad.exe".to_string()),
-            },
-            Arc::clone(&forwarder),
-            Arc::clone(&sink),
-            activation_handler_trait,
-            &status,
-        );
+        let result = bridge.update_activation_shortcut(ctrl_alt_space_shortcut());
 
-        assert_eq!(activation_handler.guide_cancel_count(), 1);
+        assert!(result.is_err());
+        assert_eq!(bridge.status().activation_hint, "Ctrl+Shift+P");
+        assert_eq!(bridge.status().running, false);
         assert_eq!(
-            forwarder.guide_control_calls(),
-            vec!["set_guide_shortcut:none", "set_guide_cancel:false"]
+            registrar.calls(),
+            vec![
+                "register:Ctrl+Shift+P",
+                "unregister:Ctrl+Shift+P",
+                "register:Ctrl+Alt+Space",
+                "register:Ctrl+Shift+P",
+            ]
         );
-        assert_eq!(forwarder.forwarded_shortcuts(), Vec::<String>::new());
-        assert_eq!(sink.events(), Vec::new());
+        assert!(bridge
+            .status()
+            .last_error
+            .as_deref()
+            .is_some_and(|message| message.contains("restored previous shortcut")));
     }
 
     #[test]
-    fn listener_startup_failure_records_controlled_error() {
-        let bridge = HotkeyBridge::failed(
-            activation_shortcut(),
-            "Ctrl+Shift+P".to_string(),
-            "failed to register hotkey".to_string(),
-        );
+    fn maps_runtime_shortcuts_to_tauri_global_shortcuts() {
+        let shortcut = global_shortcut_from_keyboard_shortcut(ctrl_alt_space_shortcut());
 
-        assert_eq!(
-            bridge.status(),
-            HotkeyStatusDto {
-                running: false,
-                activation_hint: "Ctrl+Shift+P".to_string(),
-                activation_count: 0,
-                ignored_passthrough_count: 0,
-                last_event: Some(HotkeyEventPayloadDto {
-                    kind: HotkeyEventKindDto::ListenerError,
-                    shortcut: "Ctrl+Shift+P".to_string(),
-                    process_name: None,
-                    activation_count: 0,
-                    ignored_passthrough_count: 0,
-                    message: Some("failed to register hotkey".to_string()),
-                }),
-                last_error: Some("failed to register hotkey".to_string()),
-            }
-        );
+        assert!(shortcut.matches(GlobalShortcutModifiers::CONTROL | GlobalShortcutModifiers::ALT, GlobalShortcutCode::Space));
     }
 
-    #[test]
-    fn updating_activation_shortcut_refreshes_forwarder_status_and_guide_filter() {
-        let runtime = runtime_with_ignored_processes(&[]);
-        let (_tx, rx) = mpsc::channel();
-        let forwarder = Arc::new(RecordingForwarder::default());
-        let bridge = HotkeyBridge::from_started(
-            "Ctrl+Shift+P".to_string(),
-            Box::new(RecordingHotkeyListenerHandle),
-            rx,
+    fn bridge_with_components(
+        runtime: OmniRuntimeState,
+        registrar: Arc<RecordingGlobalShortcutRegistrar>,
+    ) -> HotkeyBridge {
+        HotkeyBridge::with_components(
             runtime,
-            forwarder.clone(),
+            registrar,
+            Arc::new(RecordingForwarder::default()),
             Arc::new(RecordingEventSink::default()),
             Arc::new(RecordingActivationHandler::default()),
-            Arc::new(RecordingActiveProcessProvider),
-        );
-
-        bridge
-            .update_activation_shortcut(ctrl_t_shortcut())
-            .expect("activation shortcut should update");
-        bridge
-            .enable_guide_hotkeys(Some(ctrl_t_shortcut()))
-            .expect("guide hotkeys should update");
-
-        assert_eq!(bridge.status().activation_hint, "Ctrl+T");
-        assert_eq!(forwarder.activation_updates(), vec!["Ctrl+T".to_string()]);
-        assert_eq!(
-            forwarder.guide_control_calls(),
-            vec!["set_guide_cancel:true", "set_guide_shortcut:none"]
-        );
-        drop(_tx);
-        drop(bridge);
+            Arc::new(RecordingActiveProcessProvider::default()),
+        )
     }
 
     #[derive(Default)]
@@ -858,31 +826,13 @@ mod tests {
     struct RecordingActivationHandler {
         count: Mutex<u64>,
         guide_activation_count: Mutex<u64>,
-        guide_cancel_count: Mutex<u64>,
-        guide_shortcut_count: Mutex<u64>,
         guide_activation_result: bool,
-        guide_cancel_result: bool,
-        guide_shortcut_result: bool,
     }
 
     impl RecordingActivationHandler {
         fn with_guide_activation() -> Self {
             Self {
                 guide_activation_result: true,
-                ..Default::default()
-            }
-        }
-
-        fn with_guide_cancel() -> Self {
-            Self {
-                guide_cancel_result: true,
-                ..Default::default()
-            }
-        }
-
-        fn with_guide_shortcut() -> Self {
-            Self {
-                guide_shortcut_result: true,
                 ..Default::default()
             }
         }
@@ -897,24 +847,10 @@ mod tests {
                 .lock()
                 .expect("guide count should lock")
         }
-
-        fn guide_cancel_count(&self) -> u64 {
-            *self
-                .guide_cancel_count
-                .lock()
-                .expect("guide count should lock")
-        }
-
-        fn guide_shortcut_count(&self) -> u64 {
-            *self
-                .guide_shortcut_count
-                .lock()
-                .expect("guide count should lock")
-        }
     }
 
     impl PaletteActivationHandler for RecordingActivationHandler {
-        fn handle_palette_activation(&self, _context: omni_palette::domain::action::ContextRoot) {
+        fn handle_palette_activation(&self, _context: ContextRoot) {
             *self.count.lock().expect("count should lock") += 1;
         }
 
@@ -925,29 +861,11 @@ mod tests {
                 .expect("guide count should lock") += 1;
             self.guide_activation_result
         }
-
-        fn handle_guide_cancel(&self, _shortcut: KeyboardShortcut) -> bool {
-            *self
-                .guide_cancel_count
-                .lock()
-                .expect("guide count should lock") += 1;
-            self.guide_cancel_result
-        }
-
-        fn handle_guide_shortcut(&self, _shortcut: KeyboardShortcut) -> bool {
-            *self
-                .guide_shortcut_count
-                .lock()
-                .expect("guide count should lock") += 1;
-            self.guide_shortcut_result
-        }
     }
 
     #[derive(Default)]
     struct RecordingForwarder {
         shortcuts: Mutex<Vec<String>>,
-        activation_updates: Mutex<Vec<String>>,
-        guide_calls: Mutex<Vec<String>>,
     }
 
     impl RecordingForwarder {
@@ -955,20 +873,6 @@ mod tests {
             self.shortcuts
                 .lock()
                 .expect("shortcuts should lock")
-                .clone()
-        }
-
-        fn guide_control_calls(&self) -> Vec<String> {
-            self.guide_calls
-                .lock()
-                .expect("guide calls should lock")
-                .clone()
-        }
-
-        fn activation_updates(&self) -> Vec<String> {
-            self.activation_updates
-                .lock()
-                .expect("activation updates should lock")
                 .clone()
         }
     }
@@ -981,96 +885,95 @@ mod tests {
                 .push(shortcut.to_string());
             Ok(())
         }
+    }
 
-        fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
-            self.activation_updates
+    #[derive(Default)]
+    struct RecordingGlobalShortcutRegistrar {
+        calls: Mutex<Vec<String>>,
+        fail_all_registers: Option<String>,
+        fail_shortcut: Option<(KeyboardShortcut, String)>,
+    }
+
+    impl RecordingGlobalShortcutRegistrar {
+        fn failing_register(message: &str) -> Self {
+            Self {
+                fail_all_registers: Some(message.to_string()),
+                ..Default::default()
+            }
+        }
+
+        fn failing_for_shortcut(shortcut: KeyboardShortcut, message: &str) -> Self {
+            Self {
+                fail_shortcut: Some((shortcut, message.to_string())),
+                ..Default::default()
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().expect("calls should lock").clone()
+        }
+    }
+
+    impl GlobalShortcutRegistrar for RecordingGlobalShortcutRegistrar {
+        fn register_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
+            self.calls
                 .lock()
-                .expect("activation updates should lock")
-                .push(shortcut.to_string());
+                .expect("calls should lock")
+                .push(format!("register:{shortcut}"));
+            if let Some(message) = &self.fail_all_registers {
+                return Err(message.clone());
+            }
+            if let Some((failing_shortcut, message)) = &self.fail_shortcut {
+                if shortcut == *failing_shortcut {
+                    return Err(message.clone());
+                }
+            }
             Ok(())
         }
 
-        fn forward_guide_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
-            self.guide_calls
+        fn unregister_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
+            self.calls
                 .lock()
-                .expect("guide calls should lock")
-                .push(format!("forward_guide:{shortcut}"));
-            Ok(())
-        }
-
-        fn set_guide_cancel_hotkey(&self, enabled: bool) -> Result<(), String> {
-            self.guide_calls
-                .lock()
-                .expect("guide calls should lock")
-                .push(format!("set_guide_cancel:{enabled}"));
-            Ok(())
-        }
-
-        fn set_guide_shortcut_hotkey(
-            &self,
-            shortcut: Option<KeyboardShortcut>,
-        ) -> Result<(), String> {
-            let shortcut = shortcut
-                .map(|shortcut| shortcut.to_string())
-                .unwrap_or_else(|| "none".to_string());
-            self.guide_calls
-                .lock()
-                .expect("guide calls should lock")
-                .push(format!("set_guide_shortcut:{shortcut}"));
+                .expect("calls should lock")
+                .push(format!("unregister:{shortcut}"));
             Ok(())
         }
     }
 
-    struct RecordingHotkeyListenerHandle;
-
-    impl StoppableHotkeyListener for RecordingHotkeyListenerHandle {
-        fn stop(self: Box<Self>) {}
+    #[derive(Default)]
+    struct RecordingActiveProcessProvider {
+        process_name: Option<String>,
     }
-
-    struct RecordingActiveProcessProvider;
 
     impl ActiveProcessProvider for RecordingActiveProcessProvider {
         fn active_window_context(&self) -> ActiveWindowContext {
             ActiveWindowContext {
                 context: empty_context(),
-                process_name: None,
+                process_name: self.process_name.clone(),
             }
         }
     }
 
-    fn empty_context() -> omni_palette::domain::action::ContextRoot {
-        omni_palette::domain::action::ContextRoot {
+    fn empty_context() -> ContextRoot {
+        ContextRoot {
             fg_context: Vec::new(),
             bg_context: Vec::new(),
-            active_interaction: omni_palette::domain::action::InteractionContext::default(),
+            active_interaction: Default::default(),
         }
     }
 
     fn activation_shortcut() -> KeyboardShortcut {
+        RuntimeConfig::default_activation_shortcut()
+    }
+
+    fn ctrl_alt_space_shortcut() -> KeyboardShortcut {
         KeyboardShortcut {
             modifier: HotkeyModifiers {
                 control: true,
-                shift: true,
+                alt: true,
                 ..Default::default()
             },
-            key: Key::KeyP,
-        }
-    }
-
-    fn ctrl_t_shortcut() -> KeyboardShortcut {
-        KeyboardShortcut {
-            modifier: HotkeyModifiers {
-                control: true,
-                ..Default::default()
-            },
-            key: Key::KeyT,
-        }
-    }
-
-    fn escape_shortcut() -> KeyboardShortcut {
-        KeyboardShortcut {
-            modifier: HotkeyModifiers::default(),
-            key: Key::Escape,
+            key: Key::Space,
         }
     }
 

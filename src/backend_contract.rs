@@ -481,7 +481,7 @@ impl BackendCommand {
             | StoredExecution::RuntimeAction(RuntimeActionCommand {
                 execution: ActionExecution::ShortcutSequence(_),
                 ..
-            }) => false,
+            }) => return None,
             StoredExecution::Deferred(ActionExecution::PluginCommand { .. })
             | StoredExecution::RuntimeAction(RuntimeActionCommand {
                 execution: ActionExecution::PluginCommand { .. },
@@ -501,17 +501,15 @@ impl BackendCommand {
             return None;
         };
         match action.execution {
-            ActionExecution::Shortcut(_) | ActionExecution::ShortcutSequence(_) => {
-                Some(GuideCommand {
-                    id: self.id.clone(),
-                    label: self.label.clone(),
-                    shortcut_text: self.shortcut_text.clone(),
-                    focus_target: action.context.shortcut_focus_target,
-                    work_area: action.context.active_work_area,
-                    action: action.clone(),
-                })
-            }
-            ActionExecution::PluginCommand { .. } => None,
+            ActionExecution::Shortcut(_) => Some(GuideCommand {
+                id: self.id.clone(),
+                label: self.label.clone(),
+                shortcut_text: self.shortcut_text.clone(),
+                focus_target: action.context.shortcut_focus_target,
+                work_area: action.context.active_work_area,
+                action: action.clone(),
+            }),
+            ActionExecution::ShortcutSequence(_) | ActionExecution::PluginCommand { .. } => None,
         }
     }
 }
@@ -1055,7 +1053,7 @@ mod tests {
     }
 
     #[test]
-    fn shortcut_sequence_commands_include_non_capturing_guide_hints() {
+    fn shortcut_sequence_commands_do_not_include_guide_hints() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let executor = Arc::new(RecordingCommandExecutor::new(Arc::clone(&calls), Ok(())));
         let sequence = vec![KeySequenceStep {
@@ -1074,13 +1072,7 @@ mod tests {
 
         let dto = command.to_dto(Vec::new(), 0, None);
 
-        assert_eq!(
-            dto.guide_hint,
-            Some(GuideHintDto {
-                shortcut_text: "Ctrl+T".to_string(),
-                captures_shortcut: false,
-            })
-        );
+        assert_eq!(dto.guide_hint, None);
     }
 
     #[test]
@@ -1144,6 +1136,29 @@ mod tests {
                 focus_target: Some(44),
             }]
         );
+    }
+
+    #[test]
+    fn shortcut_sequence_commands_are_not_guideable() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let executor = Arc::new(RecordingCommandExecutor::new(Arc::clone(&calls), Ok(())));
+        let sequence = vec![KeySequenceStep {
+            modifier: HotkeyModifiers {
+                alt: true,
+                ..Default::default()
+            },
+            key: SequenceKey::Key(Key::KeyJ),
+        }];
+        let session = CommandSession::from_commands(vec![runtime_action_command(
+            "vscode-open-recent",
+            "VS Code: Open recent",
+            ActionExecution::ShortcutSequence(sequence),
+            executor,
+        )]);
+
+        let result = session.guide_command(&CommandId::new("vscode-open-recent"));
+
+        assert!(result.is_err());
     }
 
     #[test]

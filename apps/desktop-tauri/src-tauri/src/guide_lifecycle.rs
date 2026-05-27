@@ -7,10 +7,12 @@ use omni_palette::{
     backend_contract::{CommandExecutionResultDto, GuideCommand},
     domain::hotkey::KeyboardShortcut,
 };
+#[cfg(target_os = "windows")]
+use omni_palette::platform::windows::sender::hotkey_sender::send_shortcut;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
-use crate::window_lifecycle::WindowLifecycle;
+use crate::{window_lifecycle::WindowLifecycle, ActivationShortcutDto};
 
 pub const GUIDE_EVENT_NAME: &str = "omni://palette-guide";
 pub const GUIDE_DURATION: Duration = Duration::from_secs(8);
@@ -25,6 +27,8 @@ pub struct GuideStatusDto {
     pub command_label: Option<String>,
     pub shortcut_text: Option<String>,
     pub activation_hint: String,
+    pub activation_shortcut: ActivationShortcutDto,
+    pub captured_shortcut: Option<ActivationShortcutDto>,
     pub start_count: u64,
     pub complete_count: u64,
     pub cancel_count: u64,
@@ -40,6 +44,8 @@ pub struct GuideEventPayloadDto {
     pub command_label: Option<String>,
     pub shortcut_text: Option<String>,
     pub activation_hint: String,
+    pub activation_shortcut: ActivationShortcutDto,
+    pub captured_shortcut: Option<ActivationShortcutDto>,
     pub start_count: u64,
     pub complete_count: u64,
     pub cancel_count: u64,
@@ -64,7 +70,7 @@ struct GuideStatusStore {
 
 struct GuideStatusState {
     active: Option<ActiveGuide>,
-    activation_hint: String,
+    activation_shortcut: KeyboardShortcut,
     start_count: u64,
     complete_count: u64,
     cancel_count: u64,
@@ -81,11 +87,11 @@ struct ActiveGuide {
 }
 
 impl GuideStatusStore {
-    fn new(activation_hint: String) -> Self {
+    fn new(activation_shortcut: KeyboardShortcut) -> Self {
         Self {
             inner: Arc::new(Mutex::new(GuideStatusState {
                 active: None,
-                activation_hint,
+                activation_shortcut,
                 start_count: 0,
                 complete_count: 0,
                 cancel_count: 0,
@@ -100,6 +106,11 @@ impl GuideStatusStore {
     fn snapshot(&self) -> GuideStatusDto {
         let state = self.inner.lock().expect("guide status should lock");
         status_from_state(&state)
+    }
+
+    fn update_activation_shortcut(&self, activation_shortcut: KeyboardShortcut) {
+        let mut state = self.inner.lock().expect("guide status should lock");
+        state.activation_shortcut = activation_shortcut;
     }
 
     fn record_started(&self, command: Arc<dyn GuideRuntimeCommand>) -> GuideEventPayloadDto {
@@ -174,11 +185,16 @@ impl GuideStatusStore {
 
 fn status_from_state(state: &GuideStatusState) -> GuideStatusDto {
     let active = state.active.as_ref();
+    let captured_shortcut = active
+        .and_then(|guide| guide.command.captured_shortcut())
+        .map(ActivationShortcutDto::from);
     GuideStatusDto {
         active: active.is_some(),
         command_label: active.map(|guide| guide.command.label()),
         shortcut_text: active.map(|guide| guide.command.shortcut_text()),
-        activation_hint: state.activation_hint.clone(),
+        activation_hint: state.activation_shortcut.to_string(),
+        activation_shortcut: ActivationShortcutDto::from(state.activation_shortcut),
+        captured_shortcut,
         start_count: state.start_count,
         complete_count: state.complete_count,
         cancel_count: state.cancel_count,
@@ -200,6 +216,8 @@ fn event_from_state(
         command_label: status.command_label,
         shortcut_text: status.shortcut_text,
         activation_hint: status.activation_hint,
+        activation_shortcut: status.activation_shortcut,
+        captured_shortcut: status.captured_shortcut,
         start_count: status.start_count,
         complete_count: status.complete_count,
         cancel_count: status.cancel_count,
@@ -260,6 +278,27 @@ impl PaletteGuideCloser for WindowLifecycle {
 
 trait GuideEventSink: Send + Sync {
     fn emit_guide_event(&self, payload: GuideEventPayloadDto) -> Result<(), String>;
+}
+
+trait GuideShortcutForwarder: Send + Sync {
+    fn forward_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String>;
+}
+
+struct PlatformGuideShortcutForwarder;
+
+impl GuideShortcutForwarder for PlatformGuideShortcutForwarder {
+    fn forward_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        {
+            send_shortcut(&shortcut);
+            Ok(())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = shortcut;
+            Err("Guide shortcut forwarding is only supported on Windows".to_string())
+        }
+    }
 }
 
 struct TauriGuideWindowController {
@@ -353,39 +392,47 @@ pub struct GuideLifecycle {
     palette_lifecycle: Arc<dyn PaletteGuideCloser>,
     controller: Arc<dyn GuideWindowController>,
     event_sink: Arc<dyn GuideEventSink>,
+    shortcut_forwarder: Arc<dyn GuideShortcutForwarder>,
 }
 
 impl GuideLifecycle {
     fn new(
-        activation_hint: String,
+        activation_shortcut: KeyboardShortcut,
         palette_lifecycle: Arc<dyn PaletteGuideCloser>,
         controller: Arc<dyn GuideWindowController>,
         event_sink: Arc<dyn GuideEventSink>,
+        shortcut_forwarder: Arc<dyn GuideShortcutForwarder>,
     ) -> Self {
         Self {
-            status: GuideStatusStore::new(activation_hint),
+            status: GuideStatusStore::new(activation_shortcut),
             palette_lifecycle,
             controller,
             event_sink,
+            shortcut_forwarder,
         }
     }
 
     pub fn for_tauri(
-        activation_hint: String,
+        activation_shortcut: KeyboardShortcut,
         palette_lifecycle: Arc<WindowLifecycle>,
         app: AppHandle,
     ) -> Self {
         let palette_lifecycle: Arc<dyn PaletteGuideCloser> = palette_lifecycle;
         Self::new(
-            activation_hint,
+            activation_shortcut,
             palette_lifecycle,
             Arc::new(TauriGuideWindowController::new(app.clone())),
             Arc::new(TauriGuideEventSink::new(app)),
+            Arc::new(PlatformGuideShortcutForwarder),
         )
     }
 
     pub fn status(&self) -> GuideStatusDto {
         self.status.snapshot()
+    }
+
+    pub fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) {
+        self.status.update_activation_shortcut(shortcut);
     }
 
     pub fn start(&self, command: Arc<dyn GuideRuntimeCommand>) -> GuideStatusDto {
@@ -430,6 +477,41 @@ impl GuideLifecycle {
         } else {
             self.emit(event);
         }
+        true
+    }
+
+    pub fn cancel_active_and_forward_captured_shortcut(&self) -> bool {
+        let Some(active) = self.status.active() else {
+            return false;
+        };
+        let Some(shortcut) = active.command.captured_shortcut() else {
+            self.emit(self.status.record_error(
+                "Active guide has no captured shortcut to forward".to_string(),
+            ));
+            return false;
+        };
+        let Some(event) = self.status.record_cancelled() else {
+            return false;
+        };
+
+        if let Err(err) = self.controller.hide() {
+            self.emit(
+                self.status
+                    .record_error(format!("Failed to hide guide window: {err}")),
+            );
+            return false;
+        }
+
+        active.command.focus_target_window();
+        if let Err(err) = self.shortcut_forwarder.forward_shortcut(shortcut) {
+            self.emit(
+                self.status
+                    .record_error(format!("Failed to forward guide shortcut: {err}")),
+            );
+            return false;
+        }
+
+        self.emit(event);
         true
     }
 
@@ -495,6 +577,8 @@ mod tests {
                 command_label: None,
                 shortcut_text: None,
                 activation_hint: "Ctrl+Shift+P".to_string(),
+                activation_shortcut: ActivationShortcutDto::from(ctrl_shift_p()),
+                captured_shortcut: None,
                 start_count: 0,
                 complete_count: 0,
                 cancel_count: 0,
@@ -515,12 +599,21 @@ mod tests {
         assert!(status.active);
         assert_eq!(status.command_label.as_deref(), Some("Chrome: New tab"));
         assert_eq!(status.shortcut_text.as_deref(), Some("Ctrl+T"));
+        assert_eq!(
+            status.activation_shortcut,
+            ActivationShortcutDto::from(ctrl_shift_p())
+        );
+        assert_eq!(status.captured_shortcut, Some(ActivationShortcutDto::from(ctrl_t())));
         assert_eq!(status.start_count, 1);
         assert_eq!(
             lifecycle.log(),
             vec!["hide_palette", "show_guide:Chrome: New tab"]
         );
         assert_eq!(lifecycle.events().len(), 1);
+        assert_eq!(
+            lifecycle.events()[0].captured_shortcut,
+            Some(ActivationShortcutDto::from(ctrl_t()))
+        );
         assert_eq!(command.focus_count(), 1);
     }
 
@@ -541,6 +634,22 @@ mod tests {
     }
 
     #[test]
+    fn activation_shortcut_updates_status_for_active_guide() {
+        let lifecycle = test_lifecycle();
+        lifecycle.start(Arc::new(RecordingGuideCommand::shortcut("Chrome: New tab")));
+
+        lifecycle.update_activation_shortcut(ctrl_alt_space());
+
+        let status = lifecycle.status();
+        assert_eq!(status.activation_hint, "Ctrl+Alt+Space");
+        assert_eq!(
+            status.activation_shortcut,
+            ActivationShortcutDto::from(ctrl_alt_space())
+        );
+        assert_eq!(status.captured_shortcut, Some(ActivationShortcutDto::from(ctrl_t())));
+    }
+
+    #[test]
     fn escape_cancels_without_execution() {
         let lifecycle = test_lifecycle();
         let command = Arc::new(RecordingGuideCommand::shortcut("Chrome: New tab"));
@@ -551,6 +660,21 @@ mod tests {
         assert_eq!(command.execute_count(), 0);
         assert_eq!(lifecycle.status().cancel_count, 1);
         assert_eq!(lifecycle.status().active, false);
+    }
+
+    #[test]
+    fn captured_shortcut_cancels_refocuses_and_forwards_shortcut() {
+        let lifecycle = test_lifecycle();
+        let command = Arc::new(RecordingGuideCommand::shortcut("Chrome: New tab"));
+        lifecycle.start(command.clone());
+
+        assert!(lifecycle.cancel_active_and_forward_captured_shortcut());
+
+        assert_eq!(command.execute_count(), 0);
+        assert_eq!(command.focus_count(), 2);
+        assert_eq!(lifecycle.status().cancel_count, 1);
+        assert_eq!(lifecycle.status().active, false);
+        assert_eq!(lifecycle.forwarded_shortcuts(), vec![ctrl_t()]);
     }
 
     #[test]
@@ -581,6 +705,7 @@ mod tests {
         lifecycle: GuideLifecycle,
         log: Arc<Mutex<Vec<String>>>,
         events: Arc<Mutex<Vec<GuideEventPayloadDto>>>,
+        forwarded_shortcuts: Arc<Mutex<Vec<KeyboardShortcut>>>,
     }
 
     impl TestGuideLifecycle {
@@ -596,8 +721,16 @@ mod tests {
             self.lifecycle.cancel_active()
         }
 
+        fn cancel_active_and_forward_captured_shortcut(&self) -> bool {
+            self.lifecycle.cancel_active_and_forward_captured_shortcut()
+        }
+
         fn captured_shortcut(&self) -> Option<KeyboardShortcut> {
             self.lifecycle.captured_shortcut()
+        }
+
+        fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) {
+            self.lifecycle.update_activation_shortcut(shortcut);
         }
 
         fn active_generation(&self) -> Option<u64> {
@@ -619,11 +752,19 @@ mod tests {
         fn events(&self) -> Vec<GuideEventPayloadDto> {
             self.events.lock().expect("events should lock").clone()
         }
+
+        fn forwarded_shortcuts(&self) -> Vec<KeyboardShortcut> {
+            self.forwarded_shortcuts
+                .lock()
+                .expect("forwarded shortcuts should lock")
+                .clone()
+        }
     }
 
     fn test_lifecycle() -> TestGuideLifecycle {
         let log = Arc::new(Mutex::new(Vec::new()));
         let events = Arc::new(Mutex::new(Vec::new()));
+        let forwarded_shortcuts = Arc::new(Mutex::new(Vec::new()));
         let palette_lifecycle = Arc::new(RecordingPaletteCloser {
             log: Arc::clone(&log),
         });
@@ -633,16 +774,21 @@ mod tests {
         let event_sink = Arc::new(RecordingGuideEventSink {
             events: Arc::clone(&events),
         });
+        let shortcut_forwarder = Arc::new(RecordingGuideShortcutForwarder {
+            forwarded_shortcuts: Arc::clone(&forwarded_shortcuts),
+        });
 
         TestGuideLifecycle {
             lifecycle: GuideLifecycle::new(
-                "Ctrl+Shift+P".to_string(),
+                ctrl_shift_p(),
                 palette_lifecycle,
                 controller,
                 event_sink,
+                shortcut_forwarder,
             ),
             log,
             events,
+            forwarded_shortcuts,
         }
     }
 
@@ -766,6 +912,42 @@ mod tests {
                 ..Default::default()
             },
             key: Key::KeyT,
+        }
+    }
+
+    struct RecordingGuideShortcutForwarder {
+        forwarded_shortcuts: Arc<Mutex<Vec<KeyboardShortcut>>>,
+    }
+
+    impl GuideShortcutForwarder for RecordingGuideShortcutForwarder {
+        fn forward_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
+            self.forwarded_shortcuts
+                .lock()
+                .expect("forwarded shortcuts should lock")
+                .push(shortcut);
+            Ok(())
+        }
+    }
+
+    fn ctrl_shift_p() -> KeyboardShortcut {
+        KeyboardShortcut {
+            modifier: HotkeyModifiers {
+                control: true,
+                shift: true,
+                ..Default::default()
+            },
+            key: Key::KeyP,
+        }
+    }
+
+    fn ctrl_alt_space() -> KeyboardShortcut {
+        KeyboardShortcut {
+            modifier: HotkeyModifiers {
+                control: true,
+                alt: true,
+                ..Default::default()
+            },
+            key: Key::Space,
         }
     }
 }

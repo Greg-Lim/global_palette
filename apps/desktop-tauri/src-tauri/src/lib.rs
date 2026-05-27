@@ -105,17 +105,18 @@ impl ManagedHotkeyBridge {
             })
     }
 
-    fn enable_guide_hotkeys(
+    fn handle_global_shortcut_event(
         &self,
-        captured_shortcut: Option<KeyboardShortcut>,
-    ) -> Result<(), String> {
-        self.with_bridge(|bridge| bridge.enable_guide_hotkeys(captured_shortcut))
-            .unwrap_or(Ok(()))
-    }
-
-    fn clear_guide_hotkeys(&self) -> Result<(), String> {
-        self.with_bridge(|bridge| bridge.clear_guide_hotkeys())
-            .unwrap_or(Ok(()))
+        event: tauri_plugin_global_shortcut::ShortcutEvent,
+    ) {
+        if let Some(bridge) = self
+            .inner
+            .lock()
+            .expect("hotkey bridge should lock")
+            .clone()
+        {
+            bridge.handle_global_shortcut_event(event);
+        }
     }
 
     fn with_bridge<T>(&self, operation: impl FnOnce(&HotkeyBridge) -> T) -> Option<T> {
@@ -502,6 +503,19 @@ impl ActivationShortcutUpdater for ManagedHotkeyBridge {
     fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
         self.with_bridge(|bridge| bridge.update_activation_shortcut(shortcut))
             .unwrap_or_else(|| Err("Global hotkey listener is not ready".to_string()))
+    }
+}
+
+struct AppActivationShortcutUpdater {
+    hotkey_bridge: Arc<ManagedHotkeyBridge>,
+    guide_lifecycle: Arc<GuideLifecycle>,
+}
+
+impl ActivationShortcutUpdater for AppActivationShortcutUpdater {
+    fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
+        self.hotkey_bridge.update_activation_shortcut(shortcut)?;
+        self.guide_lifecycle.update_activation_shortcut(shortcut);
+        Ok(())
     }
 }
 
@@ -1321,22 +1335,14 @@ fn start_guide(command_id: String, state: State<'_, AppState>) -> GuideStatusDto
         Err(err) => return state.guide_lifecycle.record_start_error(err),
     };
     let command: Arc<dyn GuideRuntimeCommand> = Arc::new(command);
-    let captured_shortcut = command.captured_shortcut();
 
     let status = state.guide_lifecycle.start(command);
     if status.active {
-        if let Err(err) = state.hotkey_bridge.enable_guide_hotkeys(captured_shortcut) {
-            return state.guide_lifecycle.record_start_error(err);
-        }
-
         if let Some(generation) = state.guide_lifecycle.active_generation() {
             let guide_lifecycle = Arc::clone(&state.guide_lifecycle);
-            let hotkey_bridge = Arc::clone(&state.hotkey_bridge);
             thread::spawn(move || {
                 thread::sleep(GUIDE_DURATION);
-                if guide_lifecycle.expire_generation(generation) {
-                    let _ = hotkey_bridge.clear_guide_hotkeys();
-                }
+                guide_lifecycle.expire_generation(generation);
             });
         }
     }
@@ -1344,10 +1350,22 @@ fn start_guide(command_id: String, state: State<'_, AppState>) -> GuideStatusDto
 }
 
 #[tauri::command]
+fn complete_guide(state: State<'_, AppState>) -> GuideStatusDto {
+    let _ = state.guide_lifecycle.complete_active();
+    state.guide_lifecycle.status()
+}
+
+#[tauri::command]
 fn cancel_guide(state: State<'_, AppState>) -> GuideStatusDto {
-    if state.guide_lifecycle.cancel_active() {
-        let _ = state.hotkey_bridge.clear_guide_hotkeys();
-    }
+    state.guide_lifecycle.cancel_active();
+    state.guide_lifecycle.status()
+}
+
+#[tauri::command]
+fn cancel_guide_and_forward_captured_shortcut(state: State<'_, AppState>) -> GuideStatusDto {
+    state
+        .guide_lifecycle
+        .cancel_active_and_forward_captured_shortcut();
     state.guide_lifecycle.status()
 }
 
@@ -1366,7 +1384,11 @@ fn save_runtime_settings(
     request: RuntimeSettingsSaveRequestDto,
     state: State<'_, AppState>,
 ) -> RuntimeSettingsSaveResultDto {
-    save_runtime_settings_for_runtime(&state.runtime_state, state.hotkey_bridge.as_ref(), request)
+    let activation_updater = AppActivationShortcutUpdater {
+        hotkey_bridge: Arc::clone(&state.hotkey_bridge),
+        guide_lifecycle: Arc::clone(&state.guide_lifecycle),
+    };
+    save_runtime_settings_for_runtime(&state.runtime_state, &activation_updater, request)
 }
 
 #[tauri::command]
@@ -1513,23 +1535,35 @@ impl PaletteActivationHandler for ActivationRouter {
     fn handle_guide_activation(&self) -> bool {
         self.guide_lifecycle.complete_active().is_some()
     }
+}
 
-    fn handle_guide_cancel(
-        &self,
-        _shortcut: omni_palette::domain::hotkey::KeyboardShortcut,
-    ) -> bool {
-        self.guide_lifecycle.cancel_active()
+fn global_shortcut_plugin(
+    hotkey_bridge: Arc<ManagedHotkeyBridge>,
+) -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_global_shortcut::Builder::new()
+        .with_handler(move |_app, _shortcut, event| {
+            hotkey_bridge.handle_global_shortcut_event(event);
+        })
+        .build()
+}
+
+fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    let mut flags = Flags::FIND
+        | Flags::PRINT
+        | Flags::DOWNLOADS
+        | Flags::OPEN
+        | Flags::SOURCE
+        | Flags::CARET_BROWSING;
+
+    if !cfg!(debug_assertions) {
+        flags |= Flags::RELOAD;
     }
 
-    fn handle_guide_shortcut(
-        &self,
-        shortcut: omni_palette::domain::hotkey::KeyboardShortcut,
-    ) -> bool {
-        if self.guide_lifecycle.captured_shortcut() == Some(shortcut) {
-            return self.guide_lifecycle.cancel_active();
-        }
-        false
-    }
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(flags)
+        .build()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1540,8 +1574,14 @@ pub fn run() {
         Os::Windows,
     ));
     let backend = Arc::new(PaletteBackend::from_runtime_state(runtime_state.clone()));
+    let hotkey_bridge = Arc::new(ManagedHotkeyBridge::new(
+        runtime_state.config().activation.to_string(),
+    ));
+    let setup_hotkey_bridge = Arc::clone(&hotkey_bridge);
 
     tauri::Builder::default()
+        .plugin(global_shortcut_plugin(Arc::clone(&hotkey_bridge)))
+        .plugin(prevent_default_plugin())
         .on_window_event(handle_persistent_window_close_request)
         .setup(move |app| {
             let window_lifecycle = Arc::new(WindowLifecycle::for_tauri(
@@ -1555,13 +1595,11 @@ pub fn run() {
                 ExtensionInstallMarketplaceService,
             )));
             let guide_lifecycle = Arc::new(GuideLifecycle::for_tauri(
-                runtime_state.config().activation.to_string(),
+                runtime_state.config().activation,
                 Arc::clone(&window_lifecycle),
                 app.handle().clone(),
             ));
-            let hotkey_bridge = Arc::new(ManagedHotkeyBridge::new(
-                runtime_state.config().activation.to_string(),
-            ));
+            let hotkey_bridge = Arc::clone(&setup_hotkey_bridge);
             app.manage(AppState {
                 backend: Arc::clone(&backend),
                 runtime_state: runtime_state.clone(),
@@ -1595,7 +1633,9 @@ pub fn run() {
             get_window_lifecycle_status,
             hide_palette_window,
             start_guide,
+            complete_guide,
             cancel_guide,
+            cancel_guide_and_forward_captured_shortcut,
             get_guide_status,
             get_settings_bootstrap,
             save_runtime_settings,
@@ -1814,8 +1854,6 @@ mod tests {
                 last_error: None,
             }
         );
-        assert_eq!(bridge.clear_guide_hotkeys(), Ok(()));
-        assert_eq!(bridge.enable_guide_hotkeys(None), Ok(()));
         assert_eq!(
             bridge.update_activation_shortcut(ctrl_alt_space_shortcut()),
             Err("Global hotkey listener is not ready".to_string())
