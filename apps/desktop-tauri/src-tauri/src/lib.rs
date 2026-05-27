@@ -1548,22 +1548,21 @@ fn global_shortcut_plugin(
 }
 
 fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(prevent_default_flags())
+        .build()
+}
+
+fn prevent_default_flags() -> tauri_plugin_prevent_default::Flags {
     use tauri_plugin_prevent_default::Flags;
 
-    let mut flags = Flags::FIND
+    Flags::FIND
         | Flags::PRINT
         | Flags::DOWNLOADS
         | Flags::OPEN
         | Flags::SOURCE
-        | Flags::CARET_BROWSING;
-
-    if !cfg!(debug_assertions) {
-        flags |= Flags::RELOAD;
-    }
-
-    tauri_plugin_prevent_default::Builder::new()
-        .with_flags(flags)
-        .build()
+        | Flags::CARET_BROWSING
+        | Flags::RELOAD
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1732,6 +1731,16 @@ mod tests {
             source.contains(".on_window_event(handle_persistent_window_close_request)"),
             "settings/debug close requests should be intercepted so the windows can be reopened"
         );
+    }
+
+    #[test]
+    fn prevent_default_flags_block_reload_without_blocking_debug_devtools() {
+        let flags = prevent_default_flags();
+
+        assert!(flags.contains(tauri_plugin_prevent_default::Flags::RELOAD));
+        assert!(flags.contains(tauri_plugin_prevent_default::Flags::FIND));
+        assert!(flags.contains(tauri_plugin_prevent_default::Flags::PRINT));
+        assert!(!flags.contains(tauri_plugin_prevent_default::Flags::DEV_TOOLS));
     }
 
     #[test]
