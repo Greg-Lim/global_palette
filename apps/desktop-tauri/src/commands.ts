@@ -394,6 +394,7 @@ export type HotkeyEventPayload = {
 
 export type HotkeyStatus = {
   running: boolean;
+  paused: boolean;
   activation_hint: string;
   activation_count: number;
   ignored_passthrough_count: number;
@@ -1319,7 +1320,7 @@ export function formatHotkeyStatus(status: HotkeyStatus): string {
   }
 
   return [
-    status.running ? "hotkey on" : "hotkey off",
+    status.paused ? "hotkey paused" : status.running ? "hotkey on" : "hotkey off",
     status.activation_hint,
     `${status.activation_count} activations`,
     `${status.ignored_passthrough_count} passthrough`,

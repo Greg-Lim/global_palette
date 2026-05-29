@@ -2,6 +2,7 @@ mod debug_overlay;
 mod guide_lifecycle;
 mod hotkey_bridge;
 mod settings_window;
+mod tray_controls;
 mod window_lifecycle;
 
 use std::{
@@ -97,6 +98,7 @@ impl ManagedHotkeyBridge {
         self.with_bridge(|bridge| bridge.status())
             .unwrap_or(HotkeyStatusDto {
                 running: false,
+                paused: false,
                 activation_hint: self.activation_hint.clone(),
                 activation_count: 0,
                 ignored_passthrough_count: 0,
@@ -105,10 +107,19 @@ impl ManagedHotkeyBridge {
             })
     }
 
-    fn handle_global_shortcut_event(
-        &self,
-        event: tauri_plugin_global_shortcut::ShortcutEvent,
-    ) {
+    fn pause_activation(&self) -> Result<HotkeyStatusDto, String> {
+        self.with_bridge(|bridge| bridge.pause_activation())
+            .unwrap_or_else(|| Err("Global hotkey listener is not ready".to_string()))?;
+        Ok(self.status())
+    }
+
+    fn resume_activation(&self) -> Result<HotkeyStatusDto, String> {
+        self.with_bridge(|bridge| bridge.resume_activation())
+            .unwrap_or_else(|| Err("Global hotkey listener is not ready".to_string()))?;
+        Ok(self.status())
+    }
+
+    fn handle_global_shortcut_event(&self, event: tauri_plugin_global_shortcut::ShortcutEvent) {
         if let Some(bridge) = self
             .inner
             .lock()
@@ -1537,6 +1548,31 @@ impl PaletteActivationHandler for ActivationRouter {
     }
 }
 
+struct AppTrayMenuController {
+    hotkey_bridge: Arc<ManagedHotkeyBridge>,
+    window_lifecycle: Arc<WindowLifecycle>,
+    settings_window: Arc<SettingsWindow>,
+    guide_lifecycle: Arc<GuideLifecycle>,
+}
+
+impl tray_controls::TrayMenuController for AppTrayMenuController {
+    fn show_settings(&self) {
+        let _ = self.settings_window.show_settings_window();
+    }
+
+    fn toggle_pause(&self) -> bool {
+        if self.hotkey_bridge.status().paused {
+            let _ = self.hotkey_bridge.resume_activation();
+        } else {
+            self.window_lifecycle.hide_palette_window();
+            self.guide_lifecycle.cancel_active();
+            let _ = self.hotkey_bridge.pause_activation();
+        }
+
+        self.hotkey_bridge.status().paused
+    }
+}
+
 fn global_shortcut_plugin(
     hotkey_bridge: Arc<ManagedHotkeyBridge>,
 ) -> tauri::plugin::TauriPlugin<tauri::Wry> {
@@ -1604,7 +1640,7 @@ pub fn run() {
                 runtime_state: runtime_state.clone(),
                 hotkey_bridge: Arc::clone(&hotkey_bridge),
                 window_lifecycle: Arc::clone(&window_lifecycle),
-                settings_window,
+                settings_window: Arc::clone(&settings_window),
                 guide_lifecycle: Arc::clone(&guide_lifecycle),
                 marketplace,
                 debug_overlay,
@@ -1621,6 +1657,15 @@ pub fn run() {
                 app.handle().clone(),
                 activation_handler,
             )));
+            tray_controls::install_tray_menu(
+                app.handle(),
+                Arc::new(AppTrayMenuController {
+                    hotkey_bridge: Arc::clone(&hotkey_bridge),
+                    window_lifecycle,
+                    settings_window,
+                    guide_lifecycle,
+                }),
+            )?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1856,6 +1901,7 @@ mod tests {
             bridge.status(),
             HotkeyStatusDto {
                 running: false,
+                paused: false,
                 activation_hint: "Ctrl+Shift+P".to_string(),
                 activation_count: 0,
                 ignored_passthrough_count: 0,

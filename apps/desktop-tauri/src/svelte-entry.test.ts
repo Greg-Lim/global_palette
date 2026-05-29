@@ -269,6 +269,22 @@ describe("Svelte frontend entrypoint", () => {
     });
   });
 
+  it("uses the committed Tauri icon for packaging and the background tray indicator", () => {
+    const config = JSON.parse(
+      readFileSync(join(appRoot, "src-tauri", "tauri.conf.json"), "utf8"),
+    );
+    const iconPath = join(appRoot, "src-tauri", "icons", "icon.ico");
+
+    expect(existsSync(iconPath)).toBe(true);
+    expect(config.bundle.icon).toContain("icons/icon.ico");
+    expect(config.app.trayIcon).toMatchObject({
+      id: "main",
+      iconPath: "icons/icon.ico",
+      showMenuOnLeftClick: true,
+      tooltip: "Omni Palette",
+    });
+  });
+
   it("grants default Tauri permissions to every local app window", () => {
     const config = JSON.parse(
       readFileSync(join(appRoot, "src-tauri", "tauri.conf.json"), "utf8"),

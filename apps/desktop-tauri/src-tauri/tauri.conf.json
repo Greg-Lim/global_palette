@@ -56,10 +56,17 @@
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "id": "main",
+      "iconPath": "icons/icon.ico",
+      "showMenuOnLeftClick": true,
+      "tooltip": "Omni Palette"
     }
   },
   "bundle": {
     "active": false,
-    "targets": "all"
+    "targets": "all",
+    "icon": ["icons/icon.ico"]
   }
 }

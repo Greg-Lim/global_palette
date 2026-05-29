@@ -403,6 +403,7 @@ describe("palette api", () => {
   it("calls the backend hotkey status command and preserves payload", async () => {
     const hotkeyStatus: HotkeyStatus = {
       running: true,
+      paused: false,
       activation_hint: "Ctrl+Shift+P",
       activation_count: 2,
       ignored_passthrough_count: 1,
@@ -869,6 +870,7 @@ describe("formatHotkeyStatus", () => {
     expect(
       formatHotkeyStatus({
         running: true,
+        paused: false,
         activation_hint: "Ctrl+Shift+P",
         activation_count: 2,
         ignored_passthrough_count: 1,
@@ -885,10 +887,25 @@ describe("formatHotkeyStatus", () => {
     ).toBe("hotkey on - Ctrl+Shift+P - 2 activations - 1 passthrough");
   });
 
+  it("summarizes paused activation state before event counts", () => {
+    expect(
+      formatHotkeyStatus({
+        running: false,
+        paused: true,
+        activation_hint: "Ctrl+Shift+P",
+        activation_count: 2,
+        ignored_passthrough_count: 1,
+        last_event: null,
+        last_error: null,
+      }),
+    ).toBe("hotkey paused - Ctrl+Shift+P - 2 activations - 1 passthrough");
+  });
+
   it("shows listener errors before event counts", () => {
     expect(
       formatHotkeyStatus({
         running: false,
+        paused: false,
         activation_hint: "Ctrl+Shift+P",
         activation_count: 0,
         ignored_passthrough_count: 0,

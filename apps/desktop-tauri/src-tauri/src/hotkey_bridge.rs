@@ -25,6 +25,7 @@ pub const HOTKEY_EVENT_NAME: &str = "omni://palette-activation-requested";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HotkeyStatusDto {
     pub running: bool,
+    pub paused: bool,
     pub activation_hint: String,
     pub activation_count: u64,
     pub ignored_passthrough_count: u64,
@@ -58,6 +59,7 @@ struct HotkeyStatusStore {
 #[derive(Debug)]
 struct HotkeyStatusState {
     running: bool,
+    paused: bool,
     activation_hint: String,
     activation_count: u64,
     ignored_passthrough_count: u64,
@@ -70,6 +72,7 @@ impl HotkeyStatusStore {
         Self {
             inner: Arc::new(Mutex::new(HotkeyStatusState {
                 running: false,
+                paused: false,
                 activation_hint,
                 activation_count: 0,
                 ignored_passthrough_count: 0,
@@ -83,6 +86,7 @@ impl HotkeyStatusStore {
         let state = self.inner.lock().expect("hotkey status should lock");
         HotkeyStatusDto {
             running: state.running,
+            paused: state.paused,
             activation_hint: state.activation_hint.clone(),
             activation_count: state.activation_count,
             ignored_passthrough_count: state.ignored_passthrough_count,
@@ -94,7 +98,36 @@ impl HotkeyStatusStore {
     fn record_running(&self) {
         let mut state = self.inner.lock().expect("hotkey status should lock");
         state.running = true;
+        state.paused = false;
         state.last_error = None;
+    }
+
+    fn record_paused(&self) {
+        let mut state = self.inner.lock().expect("hotkey status should lock");
+        state.running = false;
+        state.paused = true;
+        state.last_error = None;
+    }
+
+    fn record_resume_error(&self, message: String) -> HotkeyEventPayloadDto {
+        let mut state = self.inner.lock().expect("hotkey status should lock");
+        state.running = false;
+        state.paused = true;
+        state.last_error = Some(message.clone());
+        let payload = HotkeyEventPayloadDto {
+            kind: HotkeyEventKindDto::ListenerError,
+            shortcut: state.activation_hint.clone(),
+            process_name: None,
+            activation_count: state.activation_count,
+            ignored_passthrough_count: state.ignored_passthrough_count,
+            message: Some(message),
+        };
+        state.last_event = Some(payload.clone());
+        payload
+    }
+
+    fn is_paused(&self) -> bool {
+        self.inner.lock().expect("hotkey status should lock").paused
     }
 
     fn update_activation_hint(&self, activation_hint: String) {
@@ -146,6 +179,7 @@ impl HotkeyStatusStore {
     fn record_error(&self, message: String) -> HotkeyEventPayloadDto {
         let mut state = self.inner.lock().expect("hotkey status should lock");
         state.running = false;
+        state.paused = false;
         state.last_error = Some(message.clone());
         let payload = HotkeyEventPayloadDto {
             kind: HotkeyEventKindDto::ListenerError,
@@ -352,6 +386,46 @@ impl HotkeyBridge {
         self.status.snapshot()
     }
 
+    pub fn pause_activation(&self) -> Result<(), String> {
+        if self.status.is_paused() {
+            return Ok(());
+        }
+
+        let shortcut = *self
+            .activation_shortcut
+            .lock()
+            .expect("activation shortcut should lock");
+
+        if let Err(err) = self.registrar.unregister_activation_shortcut(shortcut) {
+            let message = format!("Could not unregister paused activation shortcut: {err}");
+            self.status.record_error(message.clone());
+            return Err(message);
+        }
+
+        self.status.record_paused();
+        Ok(())
+    }
+
+    pub fn resume_activation(&self) -> Result<(), String> {
+        if !self.status.is_paused() && self.status.snapshot().running {
+            return Ok(());
+        }
+
+        let shortcut = *self
+            .activation_shortcut
+            .lock()
+            .expect("activation shortcut should lock");
+
+        if let Err(err) = self.registrar.register_activation_shortcut(shortcut) {
+            let message = format!("Could not resume activation shortcut {shortcut}: {err}");
+            self.status.record_resume_error(message.clone());
+            return Err(message);
+        }
+
+        self.status.record_running();
+        Ok(())
+    }
+
     pub fn update_activation_shortcut(&self, shortcut: KeyboardShortcut) -> Result<(), String> {
         let mut active_shortcut = self
             .activation_shortcut
@@ -359,6 +433,12 @@ impl HotkeyBridge {
             .expect("activation shortcut should lock");
         let previous_shortcut = *active_shortcut;
         if previous_shortcut == shortcut {
+            return Ok(());
+        }
+
+        if self.status.is_paused() {
+            *active_shortcut = shortcut;
+            self.status.update_activation_hint(shortcut.to_string());
             return Ok(());
         }
 
@@ -395,6 +475,9 @@ impl HotkeyBridge {
 
     pub fn handle_global_shortcut_event(&self, event: ShortcutEvent) {
         if event.state() != ShortcutState::Pressed {
+            return;
+        }
+        if self.status.is_paused() {
             return;
         }
         let shortcut = *self
@@ -560,7 +643,7 @@ mod tests {
     use omni_palette::{
         config::runtime::{RuntimeConfig, RuntimePaths},
         domain::{
-            action::{Os, ContextRoot},
+            action::{ContextRoot, Os},
             hotkey::{HotkeyModifiers, Key, KeyboardShortcut},
         },
         runtime_state::{OmniRuntimeState, RuntimeStateLoadOptions},
@@ -576,6 +659,7 @@ mod tests {
             status.snapshot(),
             HotkeyStatusDto {
                 running: false,
+                paused: false,
                 activation_hint: "Ctrl+Shift+P".to_string(),
                 activation_count: 0,
                 ignored_passthrough_count: 0,
@@ -751,6 +835,118 @@ mod tests {
     }
 
     #[test]
+    fn pausing_activation_unregisters_activation_shortcut_and_reports_paused() {
+        let runtime = runtime_with_ignored_processes(&[]);
+        let registrar = Arc::new(RecordingGlobalShortcutRegistrar::default());
+        let bridge = bridge_with_components(runtime, registrar.clone());
+
+        bridge
+            .pause_activation()
+            .expect("activation shortcut should pause");
+
+        let status = bridge.status();
+        assert!(!status.running);
+        assert!(status.paused);
+        assert_eq!(status.activation_hint, "Ctrl+Shift+P");
+        assert_eq!(
+            registrar.calls(),
+            vec!["register:Ctrl+Shift+P", "unregister:Ctrl+Shift+P"]
+        );
+    }
+
+    #[test]
+    fn resuming_activation_reregisters_stored_shortcut_and_reports_running() {
+        let runtime = runtime_with_ignored_processes(&[]);
+        let registrar = Arc::new(RecordingGlobalShortcutRegistrar::default());
+        let bridge = bridge_with_components(runtime, registrar.clone());
+
+        bridge
+            .pause_activation()
+            .expect("activation shortcut should pause");
+        bridge
+            .resume_activation()
+            .expect("activation shortcut should resume");
+
+        let status = bridge.status();
+        assert!(status.running);
+        assert!(!status.paused);
+        assert_eq!(
+            registrar.calls(),
+            vec![
+                "register:Ctrl+Shift+P",
+                "unregister:Ctrl+Shift+P",
+                "register:Ctrl+Shift+P",
+            ]
+        );
+    }
+
+    #[test]
+    fn updating_activation_shortcut_while_paused_defers_registration_until_resume() {
+        let runtime = runtime_with_ignored_processes(&[]);
+        let registrar = Arc::new(RecordingGlobalShortcutRegistrar::default());
+        let bridge = bridge_with_components(runtime, registrar.clone());
+
+        bridge
+            .pause_activation()
+            .expect("activation shortcut should pause");
+        bridge
+            .update_activation_shortcut(ctrl_alt_space_shortcut())
+            .expect("paused activation shortcut should update without registering");
+
+        assert_eq!(bridge.status().activation_hint, "Ctrl+Alt+Space");
+        assert!(!bridge.status().running);
+        assert!(bridge.status().paused);
+        assert_eq!(
+            registrar.calls(),
+            vec!["register:Ctrl+Shift+P", "unregister:Ctrl+Shift+P"]
+        );
+
+        bridge
+            .resume_activation()
+            .expect("stored activation shortcut should register on resume");
+
+        assert!(bridge.status().running);
+        assert!(!bridge.status().paused);
+        assert_eq!(
+            registrar.calls(),
+            vec![
+                "register:Ctrl+Shift+P",
+                "unregister:Ctrl+Shift+P",
+                "register:Ctrl+Alt+Space",
+            ]
+        );
+    }
+
+    #[test]
+    fn paused_global_shortcut_events_do_not_activate_palette_or_guide() {
+        let runtime = runtime_with_ignored_processes(&[]);
+        let registrar = Arc::new(RecordingGlobalShortcutRegistrar::default());
+        let sink = Arc::new(RecordingEventSink::default());
+        let activation_handler = Arc::new(RecordingActivationHandler::default());
+        let bridge = HotkeyBridge::with_components(
+            runtime,
+            registrar,
+            Arc::new(RecordingForwarder::default()),
+            sink.clone(),
+            activation_handler.clone(),
+            Arc::new(RecordingActiveProcessProvider::default()),
+        );
+
+        bridge
+            .pause_activation()
+            .expect("activation shortcut should pause");
+        bridge.handle_global_shortcut_event(ShortcutEvent {
+            id: 1,
+            state: ShortcutState::Pressed,
+        });
+
+        assert_eq!(activation_handler.activation_count(), 0);
+        assert_eq!(activation_handler.guide_activation_count(), 0);
+        assert_eq!(bridge.status().activation_count, 0);
+        assert_eq!(sink.events(), Vec::new());
+    }
+
+    #[test]
     fn failed_activation_update_restores_previous_registration_and_reports_failure() {
         let runtime = runtime_with_ignored_processes(&[]);
         let registrar = Arc::new(RecordingGlobalShortcutRegistrar::failing_for_shortcut(
@@ -784,7 +980,10 @@ mod tests {
     fn maps_runtime_shortcuts_to_tauri_global_shortcuts() {
         let shortcut = global_shortcut_from_keyboard_shortcut(ctrl_alt_space_shortcut());
 
-        assert!(shortcut.matches(GlobalShortcutModifiers::CONTROL | GlobalShortcutModifiers::ALT, GlobalShortcutCode::Space));
+        assert!(shortcut.matches(
+            GlobalShortcutModifiers::CONTROL | GlobalShortcutModifiers::ALT,
+            GlobalShortcutCode::Space
+        ));
     }
 
     fn bridge_with_components(
