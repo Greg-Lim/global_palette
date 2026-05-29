@@ -32,23 +32,23 @@ follow-up migration phase.
 
 | Item | Status | Notes | Verified on |
 | --- | --- | --- | --- |
-| App starts without showing the palette immediately. | Unchecked |  |  |
-| Activation shortcut opens the palette-only surface. | Unchecked |  |  |
-| Second activation hides the palette. | Unchecked |  |  |
-| Ignored foreground apps receive shortcut passthrough instead of opening the palette. | Unchecked |  |  |
-| Palette captures the foreground target before focusing itself. | Unchecked |  |  |
-| Search input focuses automatically when palette opens. | Unchecked |  |  |
-| Palette omits the temporary command-count and `Run selected` action bar; Enter and click execute selected commands. | Unchecked | Code fix added; manual recheck pending against current Tauri window. | 2026-05-17 |
-| Typing filters command rows. | Unchecked |  |  |
-| Command ordering matches egui for the same query and context. | Unchecked |  |  |
-| Shortcut text appears on command rows where egui shows it. | Unchecked |  |  |
-| Label match highlighting appears for filtered results. | Unchecked |  |  |
-| Arrow Up and Arrow Down move selection with wraparound. | Unchecked |  |  |
-| Enter executes the selected command. | Unchecked |  |  |
-| Clicking a command executes it. | Unchecked |  |  |
-| Escape hides the palette. | Unchecked |  |  |
-| Focus loss hides the palette. | Unchecked |  |  |
-| Successful execution hides the palette. | Unchecked |  |  |
+| App starts without showing the palette immediately. | Pass |  |  |
+| Activation shortcut opens the palette-only surface. | Pass |  |  |
+| Second activation hides the palette. | Pass |  |  |
+| Ignored foreground apps receive shortcut passthrough instead of opening the palette. | Pass |  |  |
+| Palette captures the foreground target before focusing itself. | Pass |  |  |
+| Search input focuses automatically when palette opens. | Pass |  |  |
+| Palette omits the temporary command-count and `Run selected` action bar; Enter and click execute selected commands. | Pass | Code fix added; manual recheck pending against current Tauri window. | 2026-05-17 |
+| Typing filters command rows. | Pass |  |  |
+| Command ordering matches egui for the same query and context. | Pass |  |  |
+| Shortcut text appears on command rows where egui shows it. | Pass |  |  |
+| Label match highlighting appears for filtered results. | Pass |  |  |
+| Arrow Up and Arrow Down move selection with wraparound. | Pass |  |  |
+| Enter executes the selected command. | Pass |  |  |
+| Clicking a command executes it. | Pass |  |  |
+| Escape hides the palette. | Pass |  |  |
+| Focus loss hides the palette. | Pass |  |  |
+| Successful execution hides the palette. | Pass |  |  |
 | Failed execution keeps the palette visible and shows an error. | Unchecked |  |  |
 | Palette uses one hidden command-results scroller, avoids header overlap, smooth-scrolls arrow-key selection near one third from the top, and fades both top and bottom edges. | Unchecked | Code fix added; manual recheck pending against current Tauri window. | 2026-05-17 |
 | Palette window height remains fixed while filtering from many results down to few results. | Unchecked | Code fix added; manual recheck pending against current Tauri window. | 2026-05-17 |
