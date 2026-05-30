@@ -33,7 +33,7 @@ use crate::core::extensions::{
 use crate::core::performance::{current_process_private_bytes, current_process_thread_count};
 use crate::core::plugins::{manifest::PluginManifest, runtime::LoadedPlugin, PluginRegistry};
 use crate::core::registry::registry::{MasterRegistry, UnitAction};
-use crate::domain::action::{ActionExecution, CommandPriority, ContextRoot, FocusState, Os};
+use crate::domain::action::{ActionExecution, ContextRoot, Os};
 use crate::domain::hotkey::{HotkeyModifiers, Key, KeyboardShortcut};
 use crate::platform::hotkey_actions::HotkeyPassthrough;
 use crate::platform::platform_interface::{get_all_context, RawWindowHandleExt};
@@ -1009,18 +1009,13 @@ fn show_palette(
             return;
         }
     };
-    let mut commands = commands_from_unit_actions(
+    let commands = commands_from_unit_actions(
         registry_read.get_actions(context_root),
         registry_read.plugin_registry(),
         active_hwnd,
         context_root.active_interaction.clone(),
     );
     drop(registry_read);
-
-    commands.push(reload_extensions_command(
-        commands.len(),
-        runtime_state.clone(),
-    ));
 
     if ui_tx
         .send(UiSignal::Show {
@@ -1409,34 +1404,6 @@ fn reload_runtime_state(
         application_count,
         ignored_process_count,
     })
-}
-
-fn reload_extensions_command(original_order: usize, runtime_state: RuntimeState) -> Command {
-    Command {
-        label: "Omni Palette: Reload extensions".to_string(),
-        shortcut_text: String::new(),
-        guide_hint: None,
-        priority: CommandPriority::Medium,
-        focus_state: FocusState::Global,
-        favorite: false,
-        tags: vec!["extensions".to_string(), "reload".to_string()],
-        original_order,
-        action: Box::new(move || {
-            match reload_runtime_state(
-                &runtime_state.registry,
-                &runtime_state.ignored_process_names,
-                &runtime_state.bundled_extensions_root,
-                runtime_state.current_os,
-            ) {
-                Ok(report) => log::info!(
-                    "Reloaded extensions: {} applications, {} ignored processes",
-                    report.application_count,
-                    report.ignored_process_count
-                ),
-                Err(err) => log::error!("Failed to reload extensions: {err}"),
-            }
-        }),
-    }
 }
 
 fn palette_work_area(context_root: &ContextRoot) -> Option<PaletteWorkArea> {

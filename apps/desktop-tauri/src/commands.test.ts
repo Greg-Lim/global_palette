@@ -76,19 +76,6 @@ import {
 
 const rows: CommandRow[] = [
   {
-    id: "reload-extensions",
-    label: "Omni Palette: Reload extensions",
-    shortcut_text: "",
-    focus_state: "global",
-    priority: "medium",
-    favorite: false,
-    tags: ["extensions", "reload"],
-    original_order: 0,
-    score: 0,
-    label_matches: [],
-    guide_hint: null,
-  },
-  {
     id: "chrome-new-tab",
     label: "Chrome: New tab",
     shortcut_text: "Ctrl+T",
@@ -1139,11 +1126,11 @@ describe("guide keyboard handling", () => {
 
 describe("nextSelectedCommandId", () => {
   it("selects the first row after search results refresh", () => {
-    expect(nextSelectedCommandId("chrome-new-tab", rows)).toBe("reload-extensions");
+    expect(nextSelectedCommandId("chrome-new-tab", rows)).toBe("chrome-new-tab");
   });
 
   it("selects the first row when the current selection disappears", () => {
-    expect(nextSelectedCommandId("missing", rows)).toBe("reload-extensions");
+    expect(nextSelectedCommandId("missing", rows)).toBe("chrome-new-tab");
   });
 
   it("clears the selection when there are no rows", () => {
@@ -1153,15 +1140,15 @@ describe("nextSelectedCommandId", () => {
 
 describe("nextKeyboardSelectedCommandId", () => {
   it("wraps down from the last visible row to the first", () => {
-    expect(nextKeyboardSelectedCommandId("chrome-new-tab", rows, 1)).toBe("reload-extensions");
+    expect(nextKeyboardSelectedCommandId("chrome-new-tab", rows, 1)).toBe("chrome-new-tab");
   });
 
   it("wraps up from the first visible row to the last", () => {
-    expect(nextKeyboardSelectedCommandId("reload-extensions", rows, -1)).toBe("chrome-new-tab");
+    expect(nextKeyboardSelectedCommandId("chrome-new-tab", rows, -1)).toBe("chrome-new-tab");
   });
 
   it("selects the first row when there is no current selection", () => {
-    expect(nextKeyboardSelectedCommandId("", rows, 1)).toBe("reload-extensions");
+    expect(nextKeyboardSelectedCommandId("", rows, 1)).toBe("chrome-new-tab");
   });
 
   it("clears selection when there are no rows", () => {
@@ -1221,7 +1208,6 @@ describe("palette fixed actions", () => {
     const withFixedActions = paletteRowsWithFixedActions(rows);
 
     expect(withFixedActions.map((row) => row.id)).toEqual([
-      "reload-extensions",
       "chrome-new-tab",
       REFRESH_EXTENSIONS_COMMAND_ID,
       OPEN_SETTINGS_COMMAND_ID,
@@ -1238,14 +1224,14 @@ describe("palette fixed actions", () => {
       guide_hint: null,
     });
     expect(isRefreshExtensionsCommand(REFRESH_EXTENSIONS_COMMAND_ID)).toBe(true);
-    expect(isRefreshExtensionsCommand("reload-extensions")).toBe(false);
+    expect(isRefreshExtensionsCommand("chrome-new-tab")).toBe(false);
     expect(isOpenSettingsCommand(OPEN_SETTINGS_COMMAND_ID)).toBe(true);
     expect(isOpenSettingsCommand("chrome-new-tab")).toBe(false);
   });
 
   it("caps rendered palette rows to twenty including fixed actions", () => {
     const manyRows = Array.from({ length: 25 }, (_, index) => ({
-      ...rows[1],
+      ...rows[0],
       id: `command-${index}`,
       label: `Command ${index}`,
       original_order: index,
@@ -1368,10 +1354,10 @@ describe("guide command activation", () => {
       plugin_application_count: 0,
     };
 
-    expect(shouldStartGuideForCommand(runtimeStatus, rows[1])).toBe(true);
-    expect(shouldStartGuideForCommand(runtimeStatus, rows[0])).toBe(false);
+    expect(shouldStartGuideForCommand(runtimeStatus, rows[0])).toBe(true);
+    expect(shouldStartGuideForCommand(runtimeStatus, refreshExtensionsCommandRow())).toBe(false);
     expect(
-      shouldStartGuideForCommand({ ...runtimeStatus, command_behavior: "execute" }, rows[1]),
+      shouldStartGuideForCommand({ ...runtimeStatus, command_behavior: "execute" }, rows[0]),
     ).toBe(false);
   });
 });

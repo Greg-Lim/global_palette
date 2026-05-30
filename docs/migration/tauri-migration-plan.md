@@ -146,7 +146,8 @@ Palette reference:
 - Command search input remains the primary hotkey surface.
 - Visible command rows include command labels and right-aligned shortcut text
   when present.
-- Backend command rows include `Omni Palette: Reload extensions`.
+- Backend command rows exclude the legacy `Omni Palette: Reload extensions`
+  row; refresh remains a fixed footer action.
 - Fixed footer actions include `Refresh extensions`.
 - Fixed footer actions include `Open settings for Omni Palette`.
 - Choosing the settings fixed action hides the palette and opens/focuses the
@@ -371,7 +372,7 @@ Completed:
 
 - Added an egui-like fixed `Refresh extensions` footer action in the Tauri
   palette.
-- Kept the existing backend `Omni Palette: Reload extensions` command row.
+- Removed the legacy backend `Omni Palette: Reload extensions` command row.
 - Preserved the fixed `Open settings for Omni Palette` row and separate Settings
   window behavior.
 - Reused the existing `reload_runtime_state` invoke.

@@ -29,7 +29,7 @@ use crate::{
             sender::hotkey_sender::{send_shortcut, send_shortcut_sequence},
         },
     },
-    runtime_state::{OmniRuntimeState, ReloadReport, RuntimeStateLoadOptions, RuntimeStatusDto},
+    runtime_state::{OmniRuntimeState, RuntimeStateLoadOptions, RuntimeStatusDto},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -184,7 +184,6 @@ impl CommandExecutionResultDto {
     }
 }
 
-type ReloadExtensionsFn = dyn Fn() -> Result<String, String> + Send + Sync;
 type SharedCommandExecutor = Arc<dyn CommandExecutor>;
 
 trait CommandExecutor: Send + Sync {
@@ -344,7 +343,6 @@ pub struct BackendCommand {
 enum StoredExecution {
     Deferred(ActionExecution),
     RuntimeAction(RuntimeActionCommand),
-    ReloadExtensions(Box<ReloadExtensionsFn>),
 }
 
 impl BackendCommand {
@@ -390,26 +388,6 @@ impl BackendCommand {
                 executor,
             }),
             metadata,
-            original_order,
-        }
-    }
-
-    pub fn reload_extensions(
-        id: CommandId,
-        original_order: usize,
-        reload: Box<ReloadExtensionsFn>,
-    ) -> Self {
-        Self {
-            id,
-            label: "Omni Palette: Reload extensions".to_string(),
-            shortcut_text: String::new(),
-            focus_state: FocusState::Global,
-            execution: StoredExecution::ReloadExtensions(reload),
-            metadata: ActionMetadata {
-                priority: CommandPriority::Medium,
-                favorite: false,
-                tags: vec!["extensions".to_string(), "reload".to_string()],
-            },
             original_order,
         }
     }
@@ -486,8 +464,7 @@ impl BackendCommand {
             | StoredExecution::RuntimeAction(RuntimeActionCommand {
                 execution: ActionExecution::PluginCommand { .. },
                 ..
-            })
-            | StoredExecution::ReloadExtensions(_) => return None,
+            }) => return None,
         };
 
         (!self.shortcut_text.is_empty()).then(|| GuideHintDto {
@@ -608,10 +585,6 @@ impl CommandSession {
         };
 
         match &command.execution {
-            StoredExecution::ReloadExtensions(reload) => match reload() {
-                Ok(message) => CommandExecutionResultDto::succeeded(message),
-                Err(err) => CommandExecutionResultDto::failed(err),
-            },
             StoredExecution::RuntimeAction(action) => match action.execute() {
                 Ok(()) => {
                     CommandExecutionResultDto::succeeded(format!("Executed {}", command.label))
@@ -862,41 +835,25 @@ impl PaletteBackend {
             .map_err(|err| format!("Extension registry lock poisoned: {err}"))?;
         let plugin_registry = registry.plugin_registry();
         let command_executor = Arc::clone(&self.command_executor);
-        let mut commands = vec![self.reload_extensions_command(0)];
-
-        commands.extend(registry.get_actions(context).into_iter().enumerate().map(
-            |(index, action)| {
+        let commands = registry
+            .get_actions(context)
+            .into_iter()
+            .enumerate()
+            .map(|(index, action)| {
                 BackendCommand::from_unit_action(
                     action,
-                    index + 1,
+                    index,
                     Arc::clone(&plugin_registry),
                     active_hwnd_val,
                     active_work_area,
                     active_interaction.clone(),
                     Arc::clone(&command_executor),
                 )
-            },
-        ));
+            })
+            .collect();
 
         Ok(CommandSession::from_commands(commands))
     }
-
-    fn reload_extensions_command(&self, original_order: usize) -> BackendCommand {
-        let runtime_state = self.runtime_state.clone();
-
-        BackendCommand::reload_extensions(
-            CommandId::new("reload-extensions"),
-            original_order,
-            Box::new(move || runtime_state.reload_extensions().map(reload_report_message)),
-        )
-    }
-}
-
-fn reload_report_message(report: ReloadReport) -> String {
-    format!(
-        "Reloaded extensions: {} applications, {} ignored processes",
-        report.application_count, report.ignored_process_count
-    )
 }
 
 fn backend_error_command(message: String) -> BackendCommand {
@@ -929,10 +886,7 @@ fn new_session_id() -> PaletteSessionId {
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    };
+    use std::sync::{Arc, Mutex};
 
     use crate::{
         config::runtime::RuntimePaths,
@@ -1076,7 +1030,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_and_reload_commands_do_not_include_guide_hints() {
+    fn plugin_commands_do_not_include_guide_hints() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let executor = Arc::new(RecordingCommandExecutor::new(Arc::clone(&calls), Ok(())));
         let plugin = runtime_action_command(
@@ -1088,14 +1042,8 @@ mod tests {
             },
             executor,
         );
-        let reload = BackendCommand::reload_extensions(
-            CommandId::new("reload"),
-            0,
-            Box::new(|| Ok("reloaded".to_string())),
-        );
 
         assert_eq!(plugin.to_dto(Vec::new(), 0, None).guide_hint, None);
-        assert_eq!(reload.to_dto(Vec::new(), 0, None).guide_hint, None);
     }
 
     #[test]
@@ -1228,30 +1176,6 @@ mod tests {
         assert_eq!(
             result,
             CommandExecutionResultDto::failed("Unknown or stale command id: missing")
-        );
-    }
-
-    #[test]
-    fn built_in_reload_command_dispatches_callback() {
-        let called = Arc::new(AtomicBool::new(false));
-        let called_by_command = Arc::clone(&called);
-        let session = CommandSession::from_commands(vec![BackendCommand::reload_extensions(
-            CommandId::new("reload"),
-            0,
-            Box::new(move || {
-                called_by_command.store(true, Ordering::Relaxed);
-                Ok("Reloaded extensions: 1 applications, 0 ignored processes".to_string())
-            }),
-        )]);
-
-        let result = session.execute(&CommandId::new("reload"));
-
-        assert!(called.load(Ordering::Relaxed));
-        assert_eq!(
-            result,
-            CommandExecutionResultDto::succeeded(
-                "Reloaded extensions: 1 applications, 0 ignored processes"
-            )
         );
     }
 
@@ -1518,7 +1442,14 @@ mod tests {
             Some("C:/Users/example/AppData/Roaming/OmniPalette/config.toml")
         );
         assert_eq!(bootstrap.runtime_status.activation_hint, "Ctrl+Shift+P");
-        assert!(!bootstrap.commands.is_empty());
+        assert!(bootstrap
+            .commands
+            .iter()
+            .all(|command| command.id.value() != "reload-extensions"));
+        assert!(bootstrap
+            .commands
+            .iter()
+            .all(|command| command.label != "Omni Palette: Reload extensions"));
     }
 
     #[test]

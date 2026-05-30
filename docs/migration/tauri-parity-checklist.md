@@ -52,7 +52,7 @@ follow-up migration phase.
 | Failed execution keeps the palette visible and shows an error. | Unchecked |  |  |
 | Palette uses one hidden command-results scroller, avoids header overlap, smooth-scrolls arrow-key selection near one third from the top, and fades both top and bottom edges. | Unchecked | Code fix added; manual recheck pending against current Tauri window. | 2026-05-17 |
 | Palette window height remains fixed while filtering from many results down to few results. | Unchecked | Code fix added; manual recheck pending against current Tauri window. | 2026-05-17 |
-| Backend command `Omni Palette: Reload extensions` appears with normal backend rows. | Unchecked |  |  |
+| Legacy backend command `Omni Palette: Reload extensions` is absent from normal backend rows. | Unchecked | Refresh remains available as the fixed footer action. |  |
 | Fixed footer action `Refresh extensions` appears below command results. | Unchecked |  |  |
 | Fixed footer action `Open settings for Omni Palette` appears below `Refresh extensions`. | Unchecked |  |  |
 | `Refresh extensions` reloads extensions and hides only on success. | Unchecked |  |  |

@@ -35,7 +35,7 @@ Plugin stress:
 
 Reload stress:
 
-- Run `Omni Palette: Reload extensions` many times during development.
+- Run the fixed palette `Refresh extensions` action many times during development.
 - Confirm reload failures do not replace the last good registry.
 - Confirm memory and thread count remain stable.
 
