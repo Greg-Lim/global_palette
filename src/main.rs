@@ -30,8 +30,6 @@ use crate::core::extensions::{
         SavedExtensionSettings,
     },
 };
-#[cfg(debug_assertions)]
-use crate::core::performance::process_performance_snapshot_logger;
 use crate::core::performance::{current_process_private_bytes, current_process_thread_count};
 use crate::core::plugins::{manifest::PluginManifest, runtime::LoadedPlugin, PluginRegistry};
 use crate::core::registry::registry::{MasterRegistry, UnitAction};
@@ -1342,8 +1340,6 @@ fn load_extension_settings_schema(
             Arc::new(plugin_host_current_time_json),
             Arc::new(plugin_host_storage_root),
             Arc::new(plugin_host_settings_text),
-            #[cfg(debug_assertions)]
-            process_performance_snapshot_logger(),
         )?
         .ok_or_else(|| {
             format!(

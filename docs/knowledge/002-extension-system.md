@@ -28,7 +28,6 @@ Current permission concepts include:
 - `read_time`
 - `read_storage`
 - `read_settings`
-- debug-only `write_performance_log`
 
 Bundled plugins live under:
 

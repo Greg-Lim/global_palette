@@ -18,8 +18,6 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering as AtomicOrdering},
 };
 
-#[cfg(debug_assertions)]
-use crate::core::performance::LogPerformanceSnapshotFn;
 use crate::core::plugins::{
     capabilities::{
         InsertTextFn, ReadSettingsTextFn, ReadTimeJsonFn, ResolvePluginStorageRootFn, TypeTextFn,
@@ -70,7 +68,6 @@ impl PluginRegistry {
         read_time_json: ReadTimeJsonFn,
         resolve_storage_root: ResolvePluginStorageRootFn,
         read_settings_text: ReadSettingsTextFn,
-        #[cfg(debug_assertions)] write_performance_log: LogPerformanceSnapshotFn,
     ) -> Self {
         let mut plugins = HashMap::new();
         let mut applications = Vec::new();
@@ -84,8 +81,6 @@ impl PluginRegistry {
                 Arc::clone(&read_time_json),
                 Arc::clone(&resolve_storage_root),
                 Arc::clone(&read_settings_text),
-                #[cfg(debug_assertions)]
-                Arc::clone(&write_performance_log),
             ) {
                 Ok(plugin) => {
                     applications.push(plugin.application());
@@ -134,7 +129,6 @@ impl PluginRegistry {
             Arc::new(std::sync::Mutex::new(Vec::new())),
             Vec::new(),
             Vec::new(),
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         )
     }
 
@@ -147,7 +141,6 @@ impl PluginRegistry {
         read_time_requests: Arc<std::sync::Mutex<Vec<String>>>,
         storage_files: Vec<(String, String, String)>,
         settings_json_by_plugin: Vec<(String, String)>,
-        #[cfg(debug_assertions)] performance_logs: Arc<std::sync::Mutex<Vec<String>>>,
     ) -> Self {
         let storage_base_root = prepare_test_storage_root(&storage_files);
         let settings_json_by_plugin = Arc::new(
@@ -188,14 +181,6 @@ impl PluginRegistry {
                     .get(plugin_id)
                     .cloned()
                     .unwrap_or_else(|| "{}".to_string()))
-            }),
-            #[cfg(debug_assertions)]
-            Arc::new(move || {
-                performance_logs
-                    .lock()
-                    .expect("performance log lock poisoned")
-                    .push("performance snapshot".to_string());
-                Ok(())
             }),
         )
     }
@@ -358,12 +343,11 @@ mod tests {
             .join("plugin.wasm")
     }
 
-    fn sample_performance_plugin_path() -> PathBuf {
-        Path::new("extensions")
-            .join("bundled")
-            .join("plugins")
-            .join("performance_tracker")
-            .join("plugin.wat")
+    #[test]
+    fn bundled_plugin_manifests_exclude_performance_tracker() {
+        assert!(real_plugin_manifests().iter().all(|path| !path
+            .components()
+            .any(|component| component.as_os_str() == "performance_tracker")));
     }
 
     fn ahk_snapshot_file_json(script_text: &str) -> String {
@@ -530,7 +514,6 @@ default_focus_state = "global"
             Arc::clone(&read_time_requests),
             Vec::new(),
             vec![("auto_typer".to_string(), settings_json)],
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         );
         let app = registry
             .applications()
@@ -593,7 +576,6 @@ default_focus_state = "global"
             Arc::clone(&read_time_requests),
             Vec::new(),
             vec![("datetime_typer".to_string(), settings_json)],
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         );
         let app = registry
             .applications()
@@ -710,66 +692,6 @@ default_focus_state = "global"
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    fn loads_performance_tracker_plugin_and_registers_command() {
-        let typed = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let inserted = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let read_time_requests = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let performance_logs = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let registry = PluginRegistry::load_with_host_recorders(
-            real_plugin_manifests(),
-            Os::Windows,
-            typed,
-            inserted,
-            read_time_requests,
-            Vec::new(),
-            Vec::new(),
-            performance_logs,
-        );
-        let app = registry
-            .applications()
-            .iter()
-            .find(|app| app.plugin_id == "performance_tracker")
-            .expect("performance tracker plugin should load");
-
-        assert_eq!(app.name, "Performance Tracker");
-        assert_eq!(app.commands.len(), 1);
-        assert_eq!(app.commands[0].id, "log_performance_snapshot");
-        assert_eq!(app.commands[0].name, "Log performance snapshot");
-    }
-
-    #[test]
-    #[cfg(debug_assertions)]
-    fn executes_performance_tracker_through_host_logger() {
-        let typed = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let inserted = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let read_time_requests = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let performance_logs = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let registry = PluginRegistry::load_with_host_recorders(
-            real_plugin_manifests(),
-            Os::Windows,
-            typed,
-            inserted,
-            read_time_requests,
-            Vec::new(),
-            Vec::new(),
-            Arc::clone(&performance_logs),
-        );
-
-        registry
-            .execute("performance_tracker", "log_performance_snapshot")
-            .expect("performance tracker command should execute");
-
-        assert_eq!(
-            performance_logs
-                .lock()
-                .expect("performance log lock poisoned")
-                .as_slice(),
-            ["performance snapshot"]
-        );
-    }
-
-    #[test]
     fn rejects_insert_text_when_permission_is_missing() {
         let root = Path::new("target")
             .join("plugin-tests")
@@ -848,63 +770,6 @@ default_focus_state = "global"
     }
 
     #[test]
-    #[cfg(debug_assertions)]
-    fn rejects_performance_logging_when_permission_is_missing() {
-        let root = Path::new("target")
-            .join("plugin-tests")
-            .join("no-performance-permission");
-        let plugin_dir = root.join("plugins").join("no_performance_permission");
-        if root.exists() {
-            fs::remove_dir_all(&root).expect("should reset test plugin root");
-        }
-        fs::create_dir_all(&plugin_dir).expect("should create test plugin folder");
-        fs::copy(
-            sample_performance_plugin_path(),
-            plugin_dir.join("plugin.wat"),
-        )
-        .expect("should copy sample performance plugin");
-        fs::write(
-            plugin_dir.join("plugin.toml"),
-            r#"id = "no_performance_permission"
-name = "No Performance Permission"
-platform = "windows"
-version = "0.1.0"
-wasm = "plugin.wat"
-permissions = []
-
-[app]
-default_focus_state = "global"
-"#,
-        )
-        .expect("should write test manifest");
-
-        let typed = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let inserted = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let read_time_requests = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let performance_logs = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let registry = PluginRegistry::load_with_host_recorders(
-            ExtensionDiscovery::new(&root).plugin_manifest_paths(),
-            Os::Windows,
-            typed,
-            inserted,
-            read_time_requests,
-            Vec::new(),
-            Vec::new(),
-            Arc::clone(&performance_logs),
-        );
-
-        let err = registry
-            .execute("no_performance_permission", "log_performance_snapshot")
-            .expect_err("performance logging should require permission");
-
-        assert!(err.contains("non-zero exit code"));
-        assert!(performance_logs
-            .lock()
-            .expect("performance log lock poisoned")
-            .is_empty());
-    }
-
-    #[test]
     fn skips_plugin_with_unknown_permission() {
         let root = Path::new("target")
             .join("plugin-tests")
@@ -927,6 +792,46 @@ platform = "windows"
 version = "0.1.0"
 wasm = "plugin.wasm"
 permissions = ["type_txt"]
+
+[app]
+default_focus_state = "global"
+"#,
+        )
+        .expect("should write test manifest");
+
+        let typed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let registry = PluginRegistry::load_with_type_text_recorder(
+            ExtensionDiscovery::new(&root).plugin_manifest_paths(),
+            Os::Windows,
+            typed,
+        );
+
+        assert!(registry.applications().is_empty());
+    }
+
+    #[test]
+    fn skips_plugin_with_retired_performance_log_permission() {
+        let root = Path::new("target")
+            .join("plugin-tests")
+            .join("retired-performance-log-permission");
+        let plugin_dir = root.join("plugins").join("retired_performance_log");
+        if root.exists() {
+            fs::remove_dir_all(&root).expect("should reset test plugin root");
+        }
+        fs::create_dir_all(&plugin_dir).expect("should create test plugin folder");
+        fs::copy(
+            sample_auto_typer_plugin_path(),
+            plugin_dir.join("plugin.wasm"),
+        )
+        .expect("should copy sample plugin wasm");
+        fs::write(
+            plugin_dir.join("plugin.toml"),
+            r#"id = "retired_performance_log"
+name = "Retired Performance Log"
+platform = "windows"
+version = "0.1.0"
+wasm = "plugin.wasm"
+permissions = ["write_performance_log"]
 
 [app]
 default_focus_state = "global"
@@ -997,7 +902,6 @@ default_focus_state = "global"
             read_time_requests,
             ahk_storage_files("^h::MsgBox \"hi\""),
             Vec::new(),
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         );
 
         let app = registry
@@ -1026,7 +930,6 @@ default_focus_state = "global"
             read_time_requests,
             ahk_storage_files(":?*:up;::\u{2B06}\u{FE0F}"),
             Vec::new(),
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         );
 
         let app = registry
@@ -1055,7 +958,6 @@ default_focus_state = "global"
             read_time_requests,
             ahk_storage_files(":?*:up;::\u{2B06}\u{FE0F}"),
             Vec::new(),
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         );
 
         let app = registry
@@ -1103,7 +1005,6 @@ default_focus_state = "global"
             read_time_requests,
             ahk_storage_files(script_text),
             Vec::new(),
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         );
 
         let app = registry
@@ -1148,7 +1049,6 @@ default_focus_state = "global"
             read_time_requests,
             ahk_storage_files(&script_text),
             Vec::new(),
-            Arc::new(std::sync::Mutex::new(Vec::new())),
         );
 
         let app = registry

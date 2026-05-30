@@ -24,7 +24,5 @@ pub fn load_plugin_settings_schema_from_manifest(
         Arc::new(|| Ok(r#"{"unix":0}"#.to_string())),
         Arc::new(|plugin_id| Ok(std::env::temp_dir().join("OmniPalette").join(plugin_id))),
         Arc::new(|_plugin_id| Ok("{}".to_string())),
-        #[cfg(debug_assertions)]
-        Arc::new(|| Ok(())),
     )
 }

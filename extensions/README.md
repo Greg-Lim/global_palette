@@ -19,9 +19,6 @@ extensions/bundled/
     auto_typer/
       plugin.toml
       plugin.wat
-    performance_tracker/
-      plugin.toml
-      plugin.wat
 ```
 
 Bundled static extensions use the same schema as installed static extensions:
@@ -66,7 +63,6 @@ Supported plugin permissions are:
 - `read_time`: read host-provided time text.
 - `read_storage`: list and read text files under the plugin-owned storage root.
 - `read_settings`: read persisted extension setting toggles for the current plugin.
-- `write_performance_log`: debug-build-only performance diagnostics.
 
 Bundled plugin storage is rooted at:
 

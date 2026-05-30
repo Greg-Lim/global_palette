@@ -5,8 +5,6 @@ use wasmtime::{Config, Engine, Linker, Module, Store};
 use crate::core::extensions::settings::{
     validate_extension_settings_schema, ExtensionSettingsSchema,
 };
-#[cfg(debug_assertions)]
-use crate::core::performance::LogPerformanceSnapshotFn;
 use crate::core::plugins::{
     capabilities::{
         register_capabilities, InsertTextFn, PluginHostContext, PluginStoreState,
@@ -39,7 +37,6 @@ impl LoadedPlugin {
         read_time_json: ReadTimeJsonFn,
         resolve_storage_root: ResolvePluginStorageRootFn,
         read_settings_text: ReadSettingsTextFn,
-        #[cfg(debug_assertions)] write_performance_log: LogPerformanceSnapshotFn,
     ) -> Result<Self, String> {
         let manifest = PluginManifest::load(manifest_path)?;
         if manifest.platform != current_os {
@@ -61,8 +58,6 @@ impl LoadedPlugin {
             read_time_json,
             resolve_storage_root,
             read_settings_text,
-            #[cfg(debug_assertions)]
-            write_performance_log,
         };
         let _settings_schema =
             load_plugin_settings_schema_internal(&manifest, &engine, &module, &host_context)?;
@@ -88,7 +83,6 @@ impl LoadedPlugin {
         read_time_json: ReadTimeJsonFn,
         resolve_storage_root: ResolvePluginStorageRootFn,
         read_settings_text: ReadSettingsTextFn,
-        #[cfg(debug_assertions)] write_performance_log: LogPerformanceSnapshotFn,
     ) -> Result<Option<ExtensionSettingsSchema>, String> {
         let manifest = PluginManifest::load(manifest_path)?;
         if manifest.platform != current_os {
@@ -109,8 +103,6 @@ impl LoadedPlugin {
             read_time_json,
             resolve_storage_root,
             read_settings_text,
-            #[cfg(debug_assertions)]
-            write_performance_log,
         };
 
         load_plugin_settings_schema_internal(&manifest, &engine, &module, &host_context)

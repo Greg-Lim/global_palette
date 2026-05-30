@@ -3,8 +3,6 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use serde::Deserialize;
 use wasmtime::Linker;
 
-#[cfg(debug_assertions)]
-use crate::core::performance::LogPerformanceSnapshotFn;
 use crate::domain::action::InteractionContext;
 
 mod read;
@@ -27,8 +25,6 @@ pub(crate) enum PluginPermission {
     ReadStorage,
     ReadSettings,
     ReadContext,
-    #[cfg(debug_assertions)]
-    WritePerformanceLog,
 }
 
 #[derive(Clone)]
@@ -38,8 +34,6 @@ pub(crate) struct PluginHostContext {
     pub(crate) read_time_json: ReadTimeJsonFn,
     pub(crate) resolve_storage_root: ResolvePluginStorageRootFn,
     pub(crate) read_settings_text: ReadSettingsTextFn,
-    #[cfg(debug_assertions)]
-    pub(crate) write_performance_log: LogPerformanceSnapshotFn,
 }
 
 pub(crate) struct PluginStoreState {

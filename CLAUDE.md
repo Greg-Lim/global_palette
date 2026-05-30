@@ -111,7 +111,6 @@ Plugin permissions are narrow and explicit:
 - `read_time`
 - `read_storage`
 - `read_settings`
-- `write_performance_log` in debug builds
 
 ## Extension Settings
 

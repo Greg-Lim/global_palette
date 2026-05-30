@@ -66,7 +66,7 @@ Standalone static TOML files use `version = 2`. Registry packages use `manifest.
 
 Static extension settings use `[[setting_categories]]` and `[[settings]]` with `category`. WASM plugins can declare `[settings] source = "wasm"` and export `settings_schema_json()`.
 
-Plugin permissions are intentionally narrow. Current permissions include `write_text`, `read_time`, `read_storage`, `read_settings`, and debug-only `write_performance_log`.
+Plugin permissions are intentionally narrow. Current permissions include `write_text`, `read_time`, `read_storage`, and `read_settings`.
 
 ## AHK Plugin
 
